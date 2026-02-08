@@ -111,7 +111,7 @@ The config file is created automatically on first launch at `~/.config/launchpic
     },
     {
       "name": "Restart Handy",
-      "exec": "killall handy 2>/dev/null; handy",
+      "exec": "killall handy 2>/dev/null; sleep 0.5; open -a Handy",
       "icon": "sf:arrow.clockwise"
     }
   ]
