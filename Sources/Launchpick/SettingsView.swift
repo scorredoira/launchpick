@@ -313,20 +313,22 @@ enum LaunchAtLogin {
             let dir = (plistPath as NSString).deletingLastPathComponent
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
             try? plist.write(toFile: plistPath, atomically: true, encoding: .utf8)
-            // Load the agent
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-            process.arguments = ["load", plistPath]
-            try? process.run()
-            process.waitUntilExit()
+            DispatchQueue.global(qos: .utility).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+                process.arguments = ["load", plistPath]
+                try? process.run()
+                process.waitUntilExit()
+            }
         } else {
-            // Unload the agent
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-            process.arguments = ["unload", plistPath]
-            try? process.run()
-            process.waitUntilExit()
-            try? FileManager.default.removeItem(atPath: plistPath)
+            DispatchQueue.global(qos: .utility).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+                process.arguments = ["unload", plistPath]
+                try? process.run()
+                process.waitUntilExit()
+                try? FileManager.default.removeItem(atPath: plistPath)
+            }
         }
     }
 }
@@ -528,7 +530,7 @@ class ShortcutRecorderNSView: NSView {
             case "ctrl", "control": return "\u{2303}"
             case "alt", "opt", "option": return "\u{2325}"
             case "shift": return "\u{21E7}"
-            case "space": return "\u{2318}\u{2325}".count > 0 ? "Space" : "Space"
+            case "space": return "Space"
             case "tab": return "\u{21E5}"
             case "return", "enter": return "\u{21A9}"
             case "delete": return "\u{232B}"

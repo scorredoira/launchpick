@@ -10,12 +10,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var keyMonitor: Any?
     private var previousApp: NSRunningApplication?
     private var settingsWindow: NSWindow?
+    private var settingsCloseObserver: NSObjectProtocol?
     private var isShowingPanel = false
 
     // Window switcher properties
     private var switcherPanel: WindowSwitcherPanel!
     private var switcherState = WindowSwitcherState()
     private var isSwitcherVisible = false
+    private var switcherPendingAdvances = 0
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
 
@@ -68,10 +70,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.reloadLaunchpickHotKey()
             let config = LaunchpickConfig.load()
+            self?.reloadLaunchpickHotKey(from: config)
             self?.loadSwitcherShortcut(from: config)
             self?.registerSameAppHotKey(from: config)
+        }
+
+        // Pre-load system apps in background so first search doesn't lag
+        DispatchQueue.global(qos: .utility).async {
+            _ = AppScanner.shared.apps
         }
 
         // Request accessibility permission and install event tap
@@ -89,9 +96,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupEventTap()
     }
 
-    private func reloadLaunchpickHotKey() {
+    private func reloadLaunchpickHotKey(from config: LaunchpickConfig) {
         HotKeyManager.shared.unregister(id: launchpickHotKeyID)
-        let config = LaunchpickConfig.load()
         let (keyCode, modifiers) = LaunchpickConfig.parseShortcut(config.shortcut)
         HotKeyManager.shared.register(id: launchpickHotKeyID, keyCode: keyCode, modifiers: modifiers) { [weak self] in
             DispatchQueue.main.async {
@@ -233,7 +239,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        NotificationCenter.default.addObserver(
+        if let old = settingsCloseObserver {
+            NotificationCenter.default.removeObserver(old)
+        }
+        settingsCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
@@ -457,7 +466,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switcherPanel.contentView = hostingView
     }
 
-    // MARK: - CGEventTap (runs on dedicated background thread)
+    // MARK: - CGEventTap (runs on main run loop)
 
     private var eventTapRetryTimer: Timer?
 
@@ -552,41 +561,57 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Switcher actions
 
     private func switcherNext() {
-        if !isSwitcherVisible {
-            showSwitcher(initialIndex: 1)
-        } else {
+        if isSwitcherVisible {
             switcherState.selectNext()
+        } else {
+            switcherPendingAdvances += 1
+            if switcherPendingAdvances == 1 {
+                showSwitcher()
+            }
         }
     }
 
     private func switcherPrevious() {
-        if !isSwitcherVisible {
-            showSwitcher(initialIndex: -1)
-        } else {
+        if isSwitcherVisible {
             switcherState.selectPrevious()
+        } else {
+            switcherPendingAdvances -= 1
+            if switcherPendingAdvances == -1 {
+                showSwitcher()
+            }
         }
     }
 
-    private func showSwitcher(initialIndex: Int = 0) {
+    private func showSwitcher() {
         if panel.isVisible {
             hidePanel()
         }
 
-        guard AXIsProcessTrusted() else { return }
+        guard AXIsProcessTrusted() else {
+            switcherPendingAdvances = 0
+            return
+        }
 
         // Enumerate windows off the main thread
         DispatchQueue.global(qos: .userInteractive).async { [weak self] in
             let windows = WindowEnumerator.enumerate()
-            guard !windows.isEmpty else { return }
+            guard !windows.isEmpty else {
+                DispatchQueue.main.async { self?.switcherPendingAdvances = 0 }
+                return
+            }
 
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.switcherState.windows = windows
 
-                if initialIndex == -1 {
-                    self.switcherState.selectedIndex = windows.count - 1
-                } else if initialIndex > 0 && initialIndex < windows.count {
-                    self.switcherState.selectedIndex = initialIndex
+                // Apply all pending advances (handles rapid Tab presses during async load)
+                let pending = self.switcherPendingAdvances
+                self.switcherPendingAdvances = 0
+
+                if pending > 0 {
+                    self.switcherState.selectedIndex = min(pending, windows.count - 1)
+                } else if pending < 0 {
+                    self.switcherState.selectedIndex = max(windows.count + pending, 0)
                 } else {
                     self.switcherState.selectedIndex = 0
                 }
