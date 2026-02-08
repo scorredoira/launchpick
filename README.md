@@ -12,7 +12,7 @@ macOS makes three things surprisingly hard:
 
 **Switching between windows, not apps.** Cmd+Tab switches between *applications*. If you have 5 Chrome windows or 3 VS Code projects open, Cmd+Tab just takes you to "Chrome" — you can't pick which window. You can't see individual windows, you can't reach minimized windows. On Linux and Windows, Alt+Tab shows every window.
 
-**Cycling between windows of the same app.** Cmd+\` only cycles within the *currently focused* app, skips minimized windows, and doesn't work reliably across all apps. If you have 3 VS Code projects open, there's no quick key to jump between them.
+**Cycling between windows of the same app.** The built-in Cmd+\` skips minimized windows and doesn't work reliably across all apps. If you have 3 VS Code projects open, there's no quick key to cycle through all of them.
 
 Launchpick solves all three in a single lightweight app.
 

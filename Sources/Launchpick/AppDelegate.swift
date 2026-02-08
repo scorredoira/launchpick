@@ -18,7 +18,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isSwitcherVisible = false
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
-    private var eventTapRunLoop: CFRunLoop?
 
     // Hotkey IDs
     private let launchpickHotKeyID: UInt32 = 1
@@ -112,7 +111,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func cycleAppWindows() {
-        guard AccessibilityHelper.checkAndRequestPermission() else { return }
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
         let pid = frontApp.processIdentifier
 
@@ -122,8 +120,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let appWindows = allWindows.filter { $0.pid == pid }
             guard appWindows.count > 1 else { return }
 
-            // The first window is the frontmost. Activate the second one.
-            let next = appWindows[1]
+            // Bring the backmost window to front. This cycles through all:
+            // [A,B,C] → raise C → [C,A,B] → raise B → [B,C,A] → raise A → [A,B,C]
+            let next = appWindows.last!
 
             if next.isMinimized {
                 AXUIElementSetAttributeValue(
@@ -499,20 +498,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         eventTap = tap
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         eventTapSource = source
-
-        // Run the event tap on a dedicated background thread so it never
-        // gets blocked by main-thread work (SwiftUI rendering, etc.)
-        let thread = Thread {
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
-            CGEvent.tapEnable(tap: tap, enable: true)
-            self.eventTapRunLoop = CFRunLoopGetCurrent()
-            CFRunLoopRun()
-        }
-        thread.name = "Launchpick.EventTap"
-        thread.qualityOfService = .userInteractive
-        thread.start()
-
-        NSLog("Launchpick: Event tap installed on background thread")
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        NSLog("Launchpick: Event tap installed")
     }
 
     private func handleEventTap(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
