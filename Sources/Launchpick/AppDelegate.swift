@@ -1,5 +1,6 @@
 import Carbon
 import Cocoa
+import Combine
 import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -8,6 +9,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var state = LaunchpickState()
     private var clickMonitor: Any?
     private var keyMonitor: Any?
+    private var searchSubscription: AnyCancellable?
     private var previousApp: NSRunningApplication?
     private var settingsWindow: NSWindow?
     private var settingsCloseObserver: NSObjectProtocol?
@@ -309,24 +311,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         state.selectedIndex = 0
         state.focusTrigger.toggle()
 
-        let panelWidth: CGFloat = 720
-        let columns = state.columns
-        let itemCount = max(state.launchers.count, 1)
-        let rows = Int(ceil(Double(itemCount) / Double(columns)))
-        let gridHeight: CGFloat = CGFloat(rows) * 172
-        let panelHeight: CGFloat = min(56 + gridHeight + 400, NSScreen.main?.visibleFrame.height ?? 800 * 0.7)
-
-        panel.setContentSize(NSSize(width: panelWidth, height: panelHeight))
-
-        if let screen = NSScreen.main {
-            let screenFrame = screen.visibleFrame
-            let x = screenFrame.midX - panelWidth / 2
-            let y = screenFrame.midY - panelHeight / 2 + screenFrame.height * 0.1
-            panel.setFrameOrigin(NSPoint(x: x, y: y))
-        }
-
+        resizePanelToFit()
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Resize panel dynamically as search text changes
+        searchSubscription = state.$searchText
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.resizePanelToFit()
+            }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.isShowingPanel = false
@@ -421,9 +415,62 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func resizePanelToFit() {
+        let panelWidth: CGFloat = 720
+        let columns = state.columns
+        let launcherCount = state.filteredLaunchers.count
+        let systemCount = min(state.filteredSystemApps.count, 8)
+
+        // Search bar: top padding 16 + bar ~44 + bottom padding 16
+        var contentHeight: CGFloat = 76
+
+        // Launcher grid
+        if launcherCount > 0 {
+            let rows = Int(ceil(Double(launcherCount) / Double(columns)))
+            contentHeight += CGFloat(rows) * 172
+        }
+
+        // System apps list
+        if systemCount > 0 {
+            if launcherCount > 0 {
+                contentHeight += 12 // divider
+            }
+            contentHeight += CGFloat(systemCount) * 46
+        }
+
+        // "No matches" placeholder
+        if launcherCount == 0 && systemCount == 0 {
+            contentHeight += 80
+        }
+
+        // Bottom padding
+        contentHeight += 16
+
+        let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
+        let panelHeight = min(contentHeight, screenHeight * 0.85)
+
+        let currentFrame = panel.frame
+        if panel.isVisible && currentFrame.height > 0 {
+            // Keep top edge fixed — only grow/shrink downward
+            let top = currentFrame.origin.y + currentFrame.size.height
+            panel.setFrame(NSRect(x: currentFrame.origin.x, y: top - panelHeight, width: panelWidth, height: panelHeight), display: true)
+        } else {
+            // Initial positioning: center on screen
+            if let screen = NSScreen.main {
+                let screenFrame = screen.visibleFrame
+                let x = screenFrame.midX - panelWidth / 2
+                let y = screenFrame.midY - panelHeight / 2 + screenFrame.height * 0.1
+                panel.setFrame(NSRect(x: x, y: y, width: panelWidth, height: panelHeight), display: true)
+            } else {
+                panel.setContentSize(NSSize(width: panelWidth, height: panelHeight))
+            }
+        }
+    }
+
     private func hidePanel() {
         guard panel.isVisible else { return }
         panel.orderOut(nil)
+        searchSubscription = nil
 
         if let monitor = clickMonitor {
             NSEvent.removeMonitor(monitor)
