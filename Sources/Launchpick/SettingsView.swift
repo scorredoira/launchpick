@@ -69,7 +69,7 @@ struct EditableLauncher: Identifiable, Equatable {
             } else if appArgs.isEmpty {
                 exec = "open -a '\(appName)'"
             } else {
-                exec = "open -a '\(appName)' \(appArgs)"
+                exec = "open -a '\(appName)' '\(appArgs)'"
             }
         case .openURL:
             exec = url.isEmpty ? "" : "open '\(url)'"
@@ -137,7 +137,13 @@ struct EditableLauncher: Identifiable, Equatable {
             guard let regex = try? NSRegularExpression(pattern: pattern),
                   let match = regex.firstMatch(in: exec, range: NSRange(exec.startIndex..., in: exec)),
                   let range = Range(match.range, in: exec) else { continue }
-            return String(exec[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+            var args = String(exec[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+            // Strip surrounding quotes so the UI shows clean paths
+            if (args.hasPrefix("'") && args.hasSuffix("'")) ||
+               (args.hasPrefix("\"") && args.hasSuffix("\"")) {
+                args = String(args.dropFirst().dropLast())
+            }
+            return args
         }
         return ""
     }
@@ -327,11 +333,11 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
-            GeneralSettingsTab(state: state, launchAtLogin: $launchAtLogin)
-                .tabItem { Label("General", systemImage: "gear") }
-
             LaunchersSettingsTab(state: state)
                 .tabItem { Label("Launchers", systemImage: "square.grid.2x2") }
+
+            GeneralSettingsTab(state: state, launchAtLogin: $launchAtLogin)
+                .tabItem { Label("General", systemImage: "gear") }
         }
         .frame(minWidth: 650, minHeight: 400)
     }

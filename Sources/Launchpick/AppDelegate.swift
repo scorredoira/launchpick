@@ -340,10 +340,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func launch(_ item: LaunchpickItem) {
         hidePanel()
+        let home = NSHomeDirectory()
+        let exec = item.exec
+            .replacingOccurrences(of: "'~/", with: "'\(home)/")
+            .replacingOccurrences(of: "\"~/", with: "\"\(home)/")
+            .replacingOccurrences(of: " ~/", with: " \(home)/")
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", item.exec]
+            process.arguments = ["-c", exec]
             process.environment = ProcessInfo.processInfo.environment
             try? process.run()
         }

@@ -42,7 +42,8 @@ Open the DMG and drag `Launchpick.app` to `/Applications`.
 - **Interactive shortcut recorder** — click and press keys to set shortcuts
 - **Icon grid** with search/filter bar
 - **Menu bar icon** with quick access to settings
-- **Tabbed settings UI** with General and Launchers tabs
+- **Tilde expansion** — `~` in paths is resolved automatically
+- **Tabbed settings UI** with Launchers and General tabs
 - **Icon picker** with app icons, SF Symbols, and custom images
 - **Auto-detect icons** from `open -a` commands
 - **Launch at Login** toggle
@@ -100,7 +101,7 @@ The config file is created automatically on first launch at `~/.config/launchpic
     },
     {
       "name": "My Project",
-      "exec": "open -a 'Visual Studio Code' '/path/to/project'",
+      "exec": "open -a 'Visual Studio Code' '~/projects/my-project'",
       "icon": "/Applications/Visual Studio Code.app"
     },
     {
