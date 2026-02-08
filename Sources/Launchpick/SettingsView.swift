@@ -231,7 +231,7 @@ class SettingsState: ObservableObject {
         let config = LaunchpickConfig.load()
         shortcut = config.shortcut
         switcherShortcut = config.switcherShortcut ?? "alt+tab"
-        sameAppSwitcherShortcut = config.sameAppSwitcherShortcut ?? "cmd+`"
+        sameAppSwitcherShortcut = config.sameAppSwitcherShortcut ?? "alt+cmd+p"
         columns = config.columns ?? 4
         launchers = config.launchers.map { EditableLauncher.from($0) }
         selectedID = launchers.first?.id

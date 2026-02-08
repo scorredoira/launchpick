@@ -270,7 +270,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 icon: IconResolver.resolve(icon: configItem.icon, exec: configItem.exec)
             )
         }
-        state.columns = config.columns ?? 4
+        state.columns = max(1, config.columns ?? 4)
     }
 
     @objc func togglePanel() {
@@ -560,10 +560,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func switcherNext() {
         if !isSwitcherVisible {
-            showSwitcher()
-            if switcherState.windows.count > 1 {
-                switcherState.selectedIndex = 1
-            }
+            showSwitcher(initialIndex: 1)
         } else {
             switcherState.selectNext()
         }
@@ -571,51 +568,57 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func switcherPrevious() {
         if !isSwitcherVisible {
-            showSwitcher()
-            if switcherState.windows.count > 1 {
-                switcherState.selectedIndex = switcherState.windows.count - 1
-            }
+            showSwitcher(initialIndex: -1)
         } else {
             switcherState.selectPrevious()
         }
     }
 
-    private func showSwitcher() {
+    private func showSwitcher(initialIndex: Int = 0) {
         // Hide launchpick if visible
         if panel.isVisible {
             hidePanel()
         }
 
-        // Check accessibility permission
-        guard AccessibilityHelper.checkAndRequestPermission() else {
+        guard AXIsProcessTrusted() else {
             NSLog("Launchpick: Accessibility permission not granted")
             return
         }
 
-        // Enumerate windows
-        let windows = WindowEnumerator.enumerate()
-        guard !windows.isEmpty else { return }
+        // Enumerate windows off the main thread to avoid blocking input
+        DispatchQueue.global(qos: .userInteractive).async { [weak self] in
+            let windows = WindowEnumerator.enumerate()
+            guard !windows.isEmpty else { return }
 
-        switcherState.windows = windows
-        switcherState.selectedIndex = 0
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.switcherState.windows = windows
+                // initialIndex: 1 = next, -1 = last (previous), 0 = first
+                if initialIndex == -1 {
+                    self.switcherState.selectedIndex = windows.count - 1
+                } else if initialIndex > 0 && initialIndex < windows.count {
+                    self.switcherState.selectedIndex = initialIndex
+                } else {
+                    self.switcherState.selectedIndex = 0
+                }
 
-        // Size the panel (148 item + 12 spacing = 160 per item)
-        let itemCount = min(windows.count, 10)
-        let panelWidth = min(CGFloat(itemCount) * 160 + 32, NSScreen.main?.frame.width ?? 800 * 0.8)
-        let panelHeight: CGFloat = 230
+                let itemCount = min(windows.count, 10)
+                let panelWidth = min(CGFloat(itemCount) * 160 + 32, NSScreen.main?.frame.width ?? 800 * 0.8)
+                let panelHeight: CGFloat = 230
 
-        switcherPanel.setContentSize(NSSize(width: panelWidth, height: panelHeight))
+                self.switcherPanel.setContentSize(NSSize(width: panelWidth, height: panelHeight))
 
-        // Center on screen
-        if let screen = NSScreen.main {
-            let screenFrame = screen.frame
-            let x = screenFrame.midX - panelWidth / 2
-            let y = screenFrame.midY - panelHeight / 2
-            switcherPanel.setFrameOrigin(NSPoint(x: x, y: y))
+                if let screen = NSScreen.main {
+                    let screenFrame = screen.frame
+                    let x = screenFrame.midX - panelWidth / 2
+                    let y = screenFrame.midY - panelHeight / 2
+                    self.switcherPanel.setFrameOrigin(NSPoint(x: x, y: y))
+                }
+
+                self.switcherPanel.orderFront(nil)
+                self.isSwitcherVisible = true
+            }
         }
-
-        switcherPanel.orderFront(nil)
-        isSwitcherVisible = true
     }
 
     private func activateSelectedWindow() {
