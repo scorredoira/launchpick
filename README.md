@@ -1,34 +1,36 @@
 # Launchpick
 
-Native macOS launcher and window switcher. Free and open source.
+Native macOS app launcher, window switcher, and same-app window cycler. Free and open source.
 
 ![Launchpick](https://img.shields.io/badge/macOS-13%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 
 ## Why
 
-macOS makes two things surprisingly hard:
+macOS makes three things surprisingly hard:
 
 **Launching apps with parameters.** On Linux you create a `.desktop` file and you're done. On macOS there's no simple way to have a shortcut that opens, say, VS Code in a specific project folder. Automator is clunky, Shortcuts is limited, and the Dock doesn't support arguments.
 
-**Switching between windows, not apps.** Cmd+Tab switches between *applications*. If you have 5 Chrome windows or 3 VS Code projects open, Cmd+Tab just takes you to "Chrome" — you can't pick which window. You can't see individual windows, you can't reach minimized windows, and Cmd+\` only cycles within the *currently focused* app. On Linux and Windows, Alt+Tab shows every window.
+**Switching between windows, not apps.** Cmd+Tab switches between *applications*. If you have 5 Chrome windows or 3 VS Code projects open, Cmd+Tab just takes you to "Chrome" — you can't pick which window. You can't see individual windows, you can't reach minimized windows. On Linux and Windows, Alt+Tab shows every window.
 
-Launchpick solves all of this in a single lightweight app.
+**Cycling between windows of the same app.** Cmd+\` only cycles within the *currently focused* app, skips minimized windows, and doesn't work reliably across all apps. If you have 3 VS Code projects open, there's no quick key to jump between them.
 
-### Launcher panel — apps, URLs, scripts with custom arguments
+Launchpick solves all three in a single lightweight app.
+
+### 1. Launcher panel — apps, URLs, scripts with custom arguments
 
 One keyboard shortcut opens a grid where each icon launches a preconfigured command — an app, a URL, a script, or an app with specific arguments like a project folder. Type to search your launchers, plus all installed apps appear below (local only — no internet results, no tracking, no web suggestions).
 
 ![Launchpick panel](assets/launchpick.png)
 
-### Window switcher — switch between windows, not apps
+### 2. Window switcher — switch between windows, not apps
 
 Option+Tab (configurable) shows every individual window across all apps — including minimized ones. Pick any VS Code project, any Chrome window, any Terminal session. Release the hold key to switch to it. Works exactly like Alt+Tab on Linux/Windows.
 
 ![Window switcher](assets/switcher.png)
 
-### Same-app window cycling
+### 3. Same-app window cycling — jump between windows of the current app
 
-Option+Cmd+P (configurable) cycles through windows of the current app — each press brings the next window to the front instantly, no UI. Works with minimized windows too. Useful when you have multiple VS Code projects, Chrome windows, or Terminal sessions open.
+Option+Cmd+P (configurable) cycles through windows of the current app — each press brings the next window to the front instantly, no UI needed. Works with minimized windows too. Useful when you have multiple VS Code projects, Chrome windows, or Terminal sessions open.
 
 ## Download
 
