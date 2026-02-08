@@ -18,7 +18,9 @@ Launchpick solves all three in a single lightweight app.
 
 ### 1. Launcher panel — apps, URLs, scripts with custom arguments
 
-One keyboard shortcut opens a grid where each icon launches a preconfigured command — an app, a URL, a script, or an app with specific arguments like a project folder. Type to search your launchers, plus all installed apps appear below (local only — no internet results, no tracking, no web suggestions).
+One keyboard shortcut opens a grid where each icon launches a preconfigured command — an app, a URL, a script, or an app with specific arguments like a project folder. Type to search your launchers, plus all installed apps appear below.
+
+**100% local search.** Unlike Spotlight or Windows Search, Launchpick never shows internet results, web suggestions, Siri suggestions, or ads. When you're trying to launch an app, you get apps — nothing else.
 
 ![Launchpick panel](assets/launchpick.png)
 
