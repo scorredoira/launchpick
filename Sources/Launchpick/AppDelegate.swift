@@ -23,6 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let launchpickHotKeyID: UInt32 = 1
 
     // Window switcher shortcut (parsed from config)
+    // These are read from the event tap thread — use volatile-style access
     private var switcherKeyCode: Int64 = 48
     private var switcherModifiers = CGEventFlags.maskCommand
     private var switcherHoldModifier = CGEventFlags.maskCommand
@@ -73,9 +74,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.registerSameAppHotKey(from: config)
         }
 
-        // Request accessibility permission (shows system dialog if not granted)
-        // and install CGEventTap for Option+Tab interception
-        AccessibilityHelper.checkAndRequestPermission()
+        // Request accessibility permission and install event tap
+        if !AccessibilityHelper.isTrusted {
+            // Try the system prompt first
+            AccessibilityHelper.checkAndRequestPermission()
+
+            // If still not trusted, show our own alert with a direct link
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                if !AccessibilityHelper.isTrusted {
+                    AccessibilityHelper.showAccessibilityAlert()
+                }
+            }
+        }
         setupEventTap()
     }
 
@@ -101,7 +111,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func registerSameAppHotKey(from config: LaunchpickConfig) {
         HotKeyManager.shared.unregister(id: sameAppHotKeyID)
         let shortcut = config.sameAppSwitcherShortcut ?? "alt+cmd+p"
-        NSLog("Launchpick: Registering same-app cycling hotkey: \(shortcut)")
         let (keyCode, modifiers) = LaunchpickConfig.parseShortcut(shortcut)
         HotKeyManager.shared.register(id: sameAppHotKeyID, keyCode: keyCode, modifiers: modifiers) { [weak self] in
             DispatchQueue.main.async {
@@ -114,14 +123,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
         let pid = frontApp.processIdentifier
 
-        // Do the heavy accessibility enumeration off the main thread
         DispatchQueue.global(qos: .userInteractive).async {
             let allWindows = WindowEnumerator.enumerate()
             let appWindows = allWindows.filter { $0.pid == pid }
             guard appWindows.count > 1 else { return }
 
-            // Bring the backmost window to front. This cycles through all:
-            // [A,B,C] → raise C → [C,A,B] → raise B → [B,C,A] → raise A → [A,B,C]
             let next = appWindows.last!
 
             if next.isMinimized {
@@ -140,7 +146,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Launchpick hotkey handler (cross-feature)
+    // MARK: - Launchpick hotkey handler
 
     private func handleLaunchpickHotKey() {
         if isSwitcherVisible {
@@ -282,7 +288,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showPanel() {
-        // Hide switcher if visible
         if isSwitcherVisible {
             hideSwitcher()
         }
@@ -295,7 +300,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         state.selectedIndex = 0
         state.focusTrigger.toggle()
 
-        // Size — tall enough for launchers grid + search results
         let panelWidth: CGFloat = 720
         let columns = state.columns
         let itemCount = max(state.launchers.count, 1)
@@ -305,7 +309,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         panel.setContentSize(NSSize(width: panelWidth, height: panelHeight))
 
-        // Position centered on screen
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
             let x = screenFrame.midX - panelWidth / 2
@@ -316,8 +319,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            self.isShowingPanel = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.isShowingPanel = false
         }
 
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
@@ -327,13 +330,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
 
-            // Escape closes the panel
             if event.keyCode == 53 {
                 self.hidePanel()
                 return nil
             }
 
-            // Cmd+V/C/X/A for borderless window
             if event.modifierFlags.contains(.command) {
                 switch event.charactersIgnoringModifiers {
                 case "v":
@@ -353,7 +354,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
 
-            // Arrow keys for grid + list navigation
             let launcherCount = self.state.filteredLaunchers.count
             let systemCount = min(self.state.filteredSystemApps.count, 8)
             let totalCount = launcherCount + systemCount
@@ -372,7 +372,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     if listPos > 0 {
                         self.state.selectedIndex -= 1
                     } else if launcherCount > 0 {
-                        // Jump to last row of grid
                         self.state.selectedIndex = launcherCount - 1
                     }
                 }
@@ -383,7 +382,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     if newIndex < launcherCount {
                         self.state.selectedIndex = newIndex
                     } else if systemCount > 0 {
-                        // Jump to first system app
                         self.state.selectedIndex = launcherCount
                     }
                 } else {
@@ -396,7 +394,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             case 124: // Right
                 if inGrid && idx < launcherCount - 1 { self.state.selectedIndex += 1 }
                 return nil
-            case 36: // Enter - launch selected item
+            case 36: // Enter
                 if inGrid {
                     let i = max(0, min(idx, launcherCount - 1))
                     self.state.onLaunch?(self.state.filteredLaunchers[i])
@@ -428,7 +426,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             keyMonitor = nil
         }
 
-        // Return focus to previously active app
         if let prev = previousApp, prev != NSRunningApplication.current {
             prev.activate(options: [])
         }
@@ -460,7 +457,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switcherPanel.contentView = hostingView
     }
 
-    // MARK: - CGEventTap for Option+Tab
+    // MARK: - CGEventTap (runs on dedicated background thread)
 
     private var eventTapRetryTimer: Timer?
 
@@ -482,7 +479,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             userInfo: selfPtr
         ) else {
             NSLog("Launchpick: Failed to create event tap. Waiting for Accessibility permission...")
-            // Retry every 2 seconds until permission is granted
             if eventTapRetryTimer == nil {
                 eventTapRetryTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
                     if AXIsProcessTrusted() {
@@ -503,8 +499,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("Launchpick: Event tap installed")
     }
 
+    // Event tap callback — runs on main run loop.
+    // Keep it minimal. All heavy work (AX operations) dispatched to background.
     private func handleEventTap(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        // If the tap gets disabled by the system, re-enable it
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
@@ -515,7 +512,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let flags = event.flags
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
 
-        // Handle flagsChanged — detect hold modifier release
         if type == .flagsChanged {
             if isSwitcherVisible && !flags.contains(switcherHoldModifier) {
                 DispatchQueue.main.async { [weak self] in
@@ -525,12 +521,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return Unmanaged.passUnretained(event)
         }
 
-        // Handle keyDown
         if type == .keyDown {
             let currentMods = flags.intersection([.maskCommand, .maskAlternate, .maskControl])
-
-            // Check window switcher shortcut (ignoring shift for reverse)
             let switcherMods = switcherModifiers.subtracting(.maskShift)
+
             if keyCode == switcherKeyCode && currentMods == switcherMods {
                 if flags.contains(.maskShift) {
                     DispatchQueue.main.async { [weak self] in
@@ -544,7 +538,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil
             }
 
-            // Escape while holding modifier — cancel switcher
             if keyCode == 53 && isSwitcherVisible && flags.contains(switcherHoldModifier) {
                 DispatchQueue.main.async { [weak self] in
                     self?.hideSwitcher()
@@ -575,17 +568,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showSwitcher(initialIndex: Int = 0) {
-        // Hide launchpick if visible
         if panel.isVisible {
             hidePanel()
         }
 
-        guard AXIsProcessTrusted() else {
-            NSLog("Launchpick: Accessibility permission not granted")
-            return
-        }
+        guard AXIsProcessTrusted() else { return }
 
-        // Enumerate windows off the main thread to avoid blocking input
+        // Enumerate windows off the main thread
         DispatchQueue.global(qos: .userInteractive).async { [weak self] in
             let windows = WindowEnumerator.enumerate()
             guard !windows.isEmpty else { return }
@@ -593,7 +582,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.switcherState.windows = windows
-                // initialIndex: 1 = next, -1 = last (previous), 0 = first
+
                 if initialIndex == -1 {
                     self.switcherState.selectedIndex = windows.count - 1
                 } else if initialIndex > 0 && initialIndex < windows.count {
@@ -622,28 +611,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func activateSelectedWindow() {
-        guard let window = switcherState.selectedWindow else {
-            hideSwitcher()
-            return
-        }
+        guard isSwitcherVisible else { return }
 
+        let window = switcherState.selectedWindow
+
+        // Hide switcher IMMEDIATELY so no more flagsChanged events trigger this
         hideSwitcher()
 
-        // Unminimize if needed
-        if window.isMinimized {
-            AXUIElementSetAttributeValue(
-                window.axWindow,
-                kAXMinimizedAttribute as CFString,
-                kCFBooleanFalse
-            )
-        }
+        guard let window = window else { return }
 
-        // Raise the window
-        AXUIElementPerformAction(window.axWindow, kAXRaiseAction as CFString)
+        // Do ALL AX operations off the main thread.
+        // AXUIElement calls can block for seconds if the target app is unresponsive.
+        let pid = window.pid
+        let axWindow = window.axWindow
+        let isMinimized = window.isMinimized
 
-        // Activate the app
-        if let app = NSRunningApplication(processIdentifier: window.pid) {
-            app.activate(options: [])
+        DispatchQueue.global(qos: .userInteractive).async {
+            if isMinimized {
+                AXUIElementSetAttributeValue(
+                    axWindow,
+                    kAXMinimizedAttribute as CFString,
+                    kCFBooleanFalse
+                )
+            }
+
+            AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
+
+            DispatchQueue.main.async {
+                if let app = NSRunningApplication(processIdentifier: pid) {
+                    app.activate(options: [])
+                }
+            }
         }
     }
 
