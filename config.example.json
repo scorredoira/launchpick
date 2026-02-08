@@ -1,0 +1,44 @@
+{
+  "shortcut": "cmd+shift+space",
+  "columns": 4,
+  "launchers": [
+    {
+      "name": "VS Code - Projects",
+      "exec": "open -a 'Visual Studio Code' ~/projects"
+    },
+    {
+      "name": "Firefox",
+      "exec": "open -a Firefox"
+    },
+    {
+      "name": "Terminal",
+      "exec": "open -a Terminal"
+    },
+    {
+      "name": "Finder - Home",
+      "exec": "open ~"
+    },
+    {
+      "name": "Notes",
+      "exec": "open -a Notes"
+    },
+    {
+      "name": "System Settings",
+      "exec": "open -a 'System Settings'"
+    },
+    {
+      "name": "Activity Monitor",
+      "exec": "open -a 'Activity Monitor'"
+    },
+    {
+      "name": "Run Script",
+      "exec": "/path/to/your/script.sh",
+      "icon": "sf:terminal.fill"
+    },
+    {
+      "name": "Restart Handy",
+      "exec": "killall handy 2>/dev/null; handy",
+      "icon": "sf:arrow.clockwise"
+    }
+  ]
+}

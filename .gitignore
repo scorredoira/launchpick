@@ -1,0 +1,9 @@
+.build/
+build/
+.swiftpm/
+AppIcon.iconset/
+icon_1024.png
+generate_icon.swift
+.DS_Store
+dist/
+CLAUDE.md
