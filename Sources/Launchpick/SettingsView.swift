@@ -208,6 +208,7 @@ class SettingsState: ObservableObject {
     @Published var launchers: [EditableLauncher] = []
     @Published var selectedID: UUID?
     @Published var shortcut: String = "cmd+shift+space"
+    @Published var switcherShortcut: String = "alt+tab"
     var columns: Int = 4
 
     var selectedIndex: Int? {
@@ -228,6 +229,7 @@ class SettingsState: ObservableObject {
     func load() {
         let config = LaunchpickConfig.load()
         shortcut = config.shortcut
+        switcherShortcut = config.switcherShortcut ?? "cmd+tab"
         columns = config.columns ?? 4
         launchers = config.launchers.map { EditableLauncher.from($0) }
         selectedID = launchers.first?.id
@@ -236,6 +238,7 @@ class SettingsState: ObservableObject {
     func save() {
         let config = LaunchpickConfig(
             shortcut: shortcut,
+            switcherShortcut: switcherShortcut,
             columns: columns,
             launchers: launchers.map { $0.toConfig() }
         )
@@ -547,14 +550,12 @@ struct GeneralSettingsTab: View {
                 HStack {
                     Text("Shortcut")
                     Spacer()
-                    Text("\u{2325} Tab")
-                        .font(.system(size: 13, weight: .medium))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.1)))
+                    ShortcutRecorderView(shortcut: $state.switcherShortcut) {
+                        state.save()
+                    }
+                    .frame(width: 200, height: 28)
                 }
-                Text("The window switcher shortcut is not configurable.")
+                Text("Click to record a new shortcut. The hold modifier activates the selected window on release.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

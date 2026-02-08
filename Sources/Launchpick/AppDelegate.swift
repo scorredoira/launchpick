@@ -22,6 +22,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Hotkey IDs
     private let launchpickHotKeyID: UInt32 = 1
 
+    // Window switcher shortcut (parsed from config)
+    private var switcherKeyCode: Int64 = 48
+    private var switcherModifiers = CGEventFlags.maskCommand
+    private var switcherHoldModifier = CGEventFlags.maskCommand
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
@@ -40,8 +45,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hidePanel()
         }
 
-        // Register launchpick hotkey
+        // Load switcher shortcut from config
         let config = LaunchpickConfig.load()
+        loadSwitcherShortcut(from: config)
+
+        // Register launchpick hotkey
         let (keyCode, modifiers) = LaunchpickConfig.parseShortcut(config.shortcut)
         HotKeyManager.shared.register(id: launchpickHotKeyID, keyCode: keyCode, modifiers: modifiers) { [weak self] in
             DispatchQueue.main.async {
@@ -49,13 +57,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Reload launchpick hotkey when shortcut changes in settings
+        // Reload hotkeys when shortcuts change in settings
         NotificationCenter.default.addObserver(
             forName: Notification.Name("ReloadHotKey"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.reloadLaunchpickHotKey()
+            let config = LaunchpickConfig.load()
+            self?.loadSwitcherShortcut(from: config)
         }
 
         // Request accessibility permission (shows system dialog if not granted)
@@ -73,6 +83,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.handleLaunchpickHotKey()
             }
         }
+    }
+
+    private func loadSwitcherShortcut(from config: LaunchpickConfig) {
+        let shortcut = config.switcherShortcut ?? "cmd+tab"
+        let parsed = LaunchpickConfig.parseSwitcherShortcut(shortcut)
+        switcherKeyCode = parsed.keyCode
+        switcherModifiers = parsed.modifiers
+        switcherHoldModifier = parsed.holdModifier
     }
 
     // MARK: - Launchpick hotkey handler (cross-feature)
@@ -418,9 +436,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let flags = event.flags
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
 
-        // Handle flagsChanged — detect Option release
+        // Handle flagsChanged — detect hold modifier release
         if type == .flagsChanged {
-            if isSwitcherVisible && !flags.contains(.maskAlternate) {
+            if isSwitcherVisible && !flags.contains(switcherHoldModifier) {
                 DispatchQueue.main.async { [weak self] in
                     self?.activateSelectedWindow()
                 }
@@ -430,14 +448,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Handle keyDown
         if type == .keyDown {
-            let hasOption = flags.contains(.maskAlternate)
-            let hasShift = flags.contains(.maskShift)
-            let hasCmd = flags.contains(.maskCommand)
-            let hasCtrl = flags.contains(.maskControl)
+            // Check if the pressed key + modifiers match the switcher shortcut (ignoring shift for reverse)
+            let modsWithoutShift = switcherModifiers.subtracting(.maskShift)
+            let currentWithoutShift = flags.intersection([.maskCommand, .maskAlternate, .maskControl])
 
-            // Option+Tab (no Cmd, no Ctrl)
-            if keyCode == 48 && hasOption && !hasCmd && !hasCtrl {
-                if hasShift {
+            if keyCode == switcherKeyCode && currentWithoutShift == modsWithoutShift {
+                if flags.contains(.maskShift) {
                     DispatchQueue.main.async { [weak self] in
                         self?.switcherPrevious()
                     }
@@ -449,8 +465,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil // Swallow the event
             }
 
-            // Option+Escape — cancel switcher
-            if keyCode == 53 && hasOption && isSwitcherVisible {
+            // Escape while holding modifier — cancel switcher
+            if keyCode == 53 && isSwitcherVisible && flags.contains(switcherHoldModifier) {
                 DispatchQueue.main.async { [weak self] in
                     self?.hideSwitcher()
                 }

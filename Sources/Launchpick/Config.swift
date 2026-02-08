@@ -3,6 +3,7 @@ import Cocoa
 
 struct LaunchpickConfig: Codable {
     var shortcut: String
+    var switcherShortcut: String?
     var columns: Int?
     var launchers: [ConfigLauncher]
 
@@ -75,7 +76,7 @@ struct LaunchpickConfig: Codable {
             ]
         }
 
-        return LaunchpickConfig(shortcut: "cmd+shift+space", columns: 4, launchers: launchers)
+        return LaunchpickConfig(shortcut: "cmd+shift+space", switcherShortcut: "alt+tab", columns: 4, launchers: launchers)
     }
 
     static func parseShortcut(_ shortcut: String) -> (keyCode: UInt32, modifiers: UInt32) {
@@ -98,6 +99,43 @@ struct LaunchpickConfig: Codable {
         }
 
         return (keyCode, modifiers)
+    }
+
+    /// Parse shortcut into CGEvent-compatible keyCode and modifier flags
+    static func parseSwitcherShortcut(_ shortcut: String) -> (keyCode: Int64, modifiers: CGEventFlags, holdModifier: CGEventFlags) {
+        let parts = shortcut.lowercased().split(separator: "+").map(String.init)
+
+        var modifiers = CGEventFlags()
+        var holdModifier = CGEventFlags()
+        var keyCode: Int64 = 48 // default: tab
+
+        for part in parts {
+            switch part {
+            case "cmd", "command":
+                modifiers.insert(.maskCommand)
+                holdModifier = .maskCommand
+            case "shift":
+                modifiers.insert(.maskShift)
+            case "opt", "option", "alt":
+                modifiers.insert(.maskAlternate)
+                holdModifier = .maskAlternate
+            case "ctrl", "control":
+                modifiers.insert(.maskControl)
+                holdModifier = .maskControl
+            default:
+                if let code = keyCodeMap[part] {
+                    keyCode = Int64(code)
+                }
+            }
+        }
+
+        // Use the last non-shift modifier as the hold modifier
+        // If only shift + key, use shift
+        if holdModifier.isEmpty && modifiers.contains(.maskShift) {
+            holdModifier = .maskShift
+        }
+
+        return (keyCode, modifiers, holdModifier)
     }
 
     private static let keyCodeMap: [String: UInt32] = [
