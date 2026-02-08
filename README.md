@@ -22,7 +22,7 @@ One keyboard shortcut opens a Spotlight-like grid where each icon launches a pre
 
 ### Window switcher — switch between windows, not apps
 
-Option+Tab shows every individual window across all apps — including minimized ones. Pick any VS Code project, any Chrome window, any Terminal session. Release Option to switch to it. Works exactly like Alt+Tab on Linux/Windows.
+Option+Tab (configurable) shows every individual window across all apps — including minimized ones. Pick any VS Code project, any Chrome window, any Terminal session. Release the hold key to switch to it. Works exactly like Alt+Tab on Linux/Windows.
 
 ![Window switcher](assets/switcher.png)
 
@@ -37,8 +37,10 @@ Open the DMG and drag `Launchpick.app` to `/Applications`.
 
 ## Features
 
-- **Global hotkey** (Cmd+Shift+Space) to toggle the launcher panel
-- **Window switcher** (Option+Tab) — switch between individual windows
+- **Global hotkey** (Cmd+Shift+Space by default) to toggle the launcher panel
+- **Window switcher** (Option+Tab by default) — switch between individual windows
+- **Configurable shortcuts** — both the launcher and window switcher shortcuts can be changed from Settings
+- **App search** — type to filter your launchers, plus system apps appear below a separator (like Spotlight, but local only)
 - **Interactive shortcut recorder** — click and press keys to set shortcuts
 - **Icon grid** with search/filter bar
 - **Menu bar icon** with quick access to settings
@@ -60,7 +62,7 @@ Open the DMG and drag `Launchpick.app` to `/Applications`.
 
 ### Accessibility (required for Window Switcher)
 
-On first launch, macOS will show a dialog asking for Accessibility permission. This is needed for the Option+Tab window switcher to intercept keyboard events.
+On first launch, macOS will show a dialog asking for Accessibility permission. This is needed for the window switcher to intercept keyboard events.
 
 1. Click "Open System Settings" in the dialog
 2. Toggle **Launchpick** ON in Privacy & Security > Accessibility
@@ -93,6 +95,7 @@ The config file is created automatically on first launch at `~/.config/launchpic
 ```json
 {
   "shortcut": "cmd+shift+space",
+  "switcherShortcut": "alt+tab",
   "columns": 4,
   "launchers": [
     {

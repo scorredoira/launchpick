@@ -248,20 +248,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         state.selectedIndex = 0
         state.focusTrigger.toggle()
 
-        // Size
+        // Size — tall enough for launchers grid + search results
         let panelWidth: CGFloat = 720
         let columns = state.columns
         let itemCount = max(state.launchers.count, 1)
         let rows = Int(ceil(Double(itemCount) / Double(columns)))
-        let panelHeight: CGFloat = 56 + CGFloat(rows) * 172 + 24
+        let gridHeight: CGFloat = CGFloat(rows) * 172
+        let panelHeight: CGFloat = min(56 + gridHeight + 400, NSScreen.main?.visibleFrame.height ?? 800 * 0.7)
 
         panel.setContentSize(NSSize(width: panelWidth, height: panelHeight))
 
-        // Position centered, upper portion of screen
+        // Position centered on screen
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
             let x = screenFrame.midX - panelWidth / 2
-            let y = screenFrame.minY + screenFrame.height * 0.65
+            let y = screenFrame.midY - panelHeight / 2 + screenFrame.height * 0.1
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
@@ -305,29 +306,60 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
 
-            // Arrow keys for grid navigation
-            let count = self.state.filteredLaunchers.count
+            // Arrow keys for grid + list navigation
+            let launcherCount = self.state.filteredLaunchers.count
+            let systemCount = min(self.state.filteredSystemApps.count, 8)
+            let totalCount = launcherCount + systemCount
             let columns = self.state.columns
-            guard count > 0 else { return event }
+            guard totalCount > 0 else { return event }
+            let idx = self.state.selectedIndex
+            let inGrid = idx < launcherCount
 
             switch event.keyCode {
             case 126: // Up
-                let newIndex = self.state.selectedIndex - columns
-                if newIndex >= 0 { self.state.selectedIndex = newIndex }
+                if inGrid {
+                    let newIndex = idx - columns
+                    if newIndex >= 0 { self.state.selectedIndex = newIndex }
+                } else {
+                    let listPos = idx - launcherCount
+                    if listPos > 0 {
+                        self.state.selectedIndex -= 1
+                    } else if launcherCount > 0 {
+                        // Jump to last row of grid
+                        self.state.selectedIndex = launcherCount - 1
+                    }
+                }
                 return nil
             case 125: // Down
-                let newIndex = self.state.selectedIndex + columns
-                if newIndex < count { self.state.selectedIndex = newIndex }
+                if inGrid {
+                    let newIndex = idx + columns
+                    if newIndex < launcherCount {
+                        self.state.selectedIndex = newIndex
+                    } else if systemCount > 0 {
+                        // Jump to first system app
+                        self.state.selectedIndex = launcherCount
+                    }
+                } else {
+                    if idx < totalCount - 1 { self.state.selectedIndex += 1 }
+                }
                 return nil
             case 123: // Left
-                if self.state.selectedIndex > 0 { self.state.selectedIndex -= 1 }
+                if inGrid && idx > 0 { self.state.selectedIndex -= 1 }
                 return nil
             case 124: // Right
-                if self.state.selectedIndex < count - 1 { self.state.selectedIndex += 1 }
+                if inGrid && idx < launcherCount - 1 { self.state.selectedIndex += 1 }
                 return nil
             case 36: // Enter - launch selected item
-                let index = max(0, min(self.state.selectedIndex, count - 1))
-                self.state.onLaunch?(self.state.filteredLaunchers[index])
+                if inGrid {
+                    let i = max(0, min(idx, launcherCount - 1))
+                    self.state.onLaunch?(self.state.filteredLaunchers[i])
+                } else {
+                    let i = idx - launcherCount
+                    let apps = self.state.filteredSystemApps
+                    if i >= 0 && i < apps.count {
+                        self.state.onLaunch?(apps[i])
+                    }
+                }
                 return nil
             default:
                 return event
