@@ -4,6 +4,7 @@ import Cocoa
 struct LaunchpickConfig: Codable {
     var shortcut: String
     var switcherShortcut: String?
+    var sameAppSwitcherShortcut: String?
     var columns: Int?
     var launchers: [ConfigLauncher]
 
@@ -76,7 +77,7 @@ struct LaunchpickConfig: Codable {
             ]
         }
 
-        return LaunchpickConfig(shortcut: "cmd+shift+space", switcherShortcut: "alt+tab", columns: 4, launchers: launchers)
+        return LaunchpickConfig(shortcut: "cmd+shift+space", switcherShortcut: "alt+tab", sameAppSwitcherShortcut: "alt+cmd+p", columns: 4, launchers: launchers)
     }
 
     static func parseShortcut(_ shortcut: String) -> (keyCode: UInt32, modifiers: UInt32) {
@@ -147,7 +148,10 @@ struct LaunchpickConfig: Codable {
         "0": 29, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23,
         "6": 22, "7": 26, "8": 28, "9": 25,
         "space": 49, "return": 36, "enter": 36, "tab": 48,
-        "escape": 53,
+        "escape": 53, "`": 50, "~": 50,
+        "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
+        "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
+        "f13": 105, "f14": 107, "f15": 113, "f16": 106, "f17": 64, "f18": 79, "f19": 80,
     ]
 }
 

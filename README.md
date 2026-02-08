@@ -12,11 +12,11 @@ macOS makes two things surprisingly hard:
 
 **Switching between windows, not apps.** Cmd+Tab switches between *applications*. If you have 5 Chrome windows or 3 VS Code projects open, Cmd+Tab just takes you to "Chrome" — you can't pick which window. You can't see individual windows, you can't reach minimized windows, and Cmd+\` only cycles within the *currently focused* app. On Linux and Windows, Alt+Tab shows every window.
 
-Launchpick solves both in a single lightweight app.
+Launchpick solves all of this in a single lightweight app.
 
-### Launchpick panel — open apps with custom arguments
+### Launcher panel — apps, URLs, scripts with custom arguments
 
-One keyboard shortcut opens a Spotlight-like grid where each icon launches a preconfigured command — an app, a URL, a script, or an app with specific arguments like a project folder.
+One keyboard shortcut opens a grid where each icon launches a preconfigured command — an app, a URL, a script, or an app with specific arguments like a project folder. Type to search your launchers, plus all installed apps appear below (local only — no internet results, no tracking, no web suggestions).
 
 ![Launchpick panel](assets/launchpick.png)
 
@@ -25,6 +25,10 @@ One keyboard shortcut opens a Spotlight-like grid where each icon launches a pre
 Option+Tab (configurable) shows every individual window across all apps — including minimized ones. Pick any VS Code project, any Chrome window, any Terminal session. Release the hold key to switch to it. Works exactly like Alt+Tab on Linux/Windows.
 
 ![Window switcher](assets/switcher.png)
+
+### Same-app window cycling
+
+Option+Cmd+P (configurable) cycles through windows of the current app — each press brings the next window to the front instantly, no UI. Works with minimized windows too. Useful when you have multiple VS Code projects, Chrome windows, or Terminal sessions open.
 
 ## Download
 
@@ -37,10 +41,11 @@ Open the DMG and drag `Launchpick.app` to `/Applications`.
 
 ## Features
 
-- **Global hotkey** (Cmd+Shift+Space by default) to toggle the launcher panel
-- **Window switcher** (Option+Tab by default) — switch between individual windows
-- **Configurable shortcuts** — both the launcher and window switcher shortcuts can be changed from Settings
-- **App search** — type to filter your launchers, plus system apps appear below a separator (like Spotlight, but local only)
+- **Launcher hotkey** (Cmd+Shift+Space by default) — toggle the launcher panel
+- **Window switcher** (Option+Tab by default) — switch between all windows
+- **Same-app cycling** (Option+Cmd+P by default) — cycle windows of the current app without UI
+- **All shortcuts configurable** from Settings, including function keys (F1-F19)
+- **App search** — type to filter launchers + installed apps (local only, no internet results)
 - **Interactive shortcut recorder** — click and press keys to set shortcuts
 - **Icon grid** with search/filter bar
 - **Menu bar icon** with quick access to settings
@@ -96,6 +101,7 @@ The config file is created automatically on first launch at `~/.config/launchpic
 {
   "shortcut": "cmd+shift+space",
   "switcherShortcut": "alt+tab",
+  "sameAppSwitcherShortcut": "alt+cmd+p",
   "columns": 4,
   "launchers": [
     {

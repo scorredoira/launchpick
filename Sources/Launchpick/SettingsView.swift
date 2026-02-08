@@ -209,6 +209,7 @@ class SettingsState: ObservableObject {
     @Published var selectedID: UUID?
     @Published var shortcut: String = "cmd+shift+space"
     @Published var switcherShortcut: String = "alt+tab"
+    @Published var sameAppSwitcherShortcut: String = "alt+cmd+p"
     var columns: Int = 4
 
     var selectedIndex: Int? {
@@ -229,7 +230,8 @@ class SettingsState: ObservableObject {
     func load() {
         let config = LaunchpickConfig.load()
         shortcut = config.shortcut
-        switcherShortcut = config.switcherShortcut ?? "cmd+tab"
+        switcherShortcut = config.switcherShortcut ?? "alt+tab"
+        sameAppSwitcherShortcut = config.sameAppSwitcherShortcut ?? "cmd+`"
         columns = config.columns ?? 4
         launchers = config.launchers.map { EditableLauncher.from($0) }
         selectedID = launchers.first?.id
@@ -239,6 +241,7 @@ class SettingsState: ObservableObject {
         let config = LaunchpickConfig(
             shortcut: shortcut,
             switcherShortcut: switcherShortcut,
+            sameAppSwitcherShortcut: sameAppSwitcherShortcut,
             columns: columns,
             launchers: launchers.map { $0.toConfig() }
         )
@@ -375,6 +378,7 @@ class ShortcutRecorderNSView: NSView {
     private var shortcutBeforeRecording: String = ""
     private var trackingArea: NSTrackingArea?
     private var isHovered = false
+    private var keyMonitor: Any?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -432,7 +436,6 @@ class ShortcutRecorderNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         if isRecording {
-            // Click while recording = cancel
             cancelRecording()
             return
         }
@@ -440,38 +443,12 @@ class ShortcutRecorderNSView: NSView {
         shortcutBeforeRecording = shortcut
         window?.makeFirstResponder(self)
         needsDisplay = true
+        installKeyMonitor()
     }
 
     override func keyDown(with event: NSEvent) {
-        guard isRecording else { super.keyDown(with: event); return }
-
-        // Escape cancels recording
-        if event.keyCode == 53 {
-            cancelRecording()
-            return
-        }
-
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard !flags.intersection([.command, .control, .option, .shift]).isEmpty else { return }
-
-        var parts: [String] = []
-        if flags.contains(.command) { parts.append("cmd") }
-        if flags.contains(.control) { parts.append("ctrl") }
-        if flags.contains(.option) { parts.append("alt") }
-        if flags.contains(.shift) { parts.append("shift") }
-
-        if let keyName = keyName(for: event.keyCode) {
-            parts.append(keyName)
-        } else if let chars = event.charactersIgnoringModifiers?.lowercased(), !chars.isEmpty {
-            parts.append(chars)
-        } else {
-            return
-        }
-
-        isRecording = false
-        shortcut = parts.joined(separator: "+")
-        onChange?(shortcut)
-        needsDisplay = true
+        guard !isRecording else { return }
+        super.keyDown(with: event)
     }
 
     override func resignFirstResponder() -> Bool {
@@ -479,18 +456,67 @@ class ShortcutRecorderNSView: NSView {
         return super.resignFirstResponder()
     }
 
+    private func installKeyMonitor() {
+        removeKeyMonitor()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self, self.isRecording else { return event }
+
+            // Escape cancels recording
+            if event.keyCode == 53 {
+                self.cancelRecording()
+                return nil
+            }
+
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let isFunctionKey = flags.contains(.function) || self.keyName(for: event.keyCode)?.hasPrefix("f") == true
+            let hasModifier = !flags.intersection([.command, .control, .option, .shift]).isEmpty
+
+            guard hasModifier || isFunctionKey else { return nil }
+
+            var parts: [String] = []
+            if flags.contains(.command) { parts.append("cmd") }
+            if flags.contains(.control) { parts.append("ctrl") }
+            if flags.contains(.option) { parts.append("alt") }
+            if flags.contains(.shift) { parts.append("shift") }
+
+            if let keyName = self.keyName(for: event.keyCode) {
+                parts.append(keyName)
+            } else if let chars = event.charactersIgnoringModifiers?.lowercased(), !chars.isEmpty {
+                parts.append(chars)
+            } else {
+                return nil
+            }
+
+            self.isRecording = false
+            self.shortcut = parts.joined(separator: "+")
+            self.onChange?(self.shortcut)
+            self.needsDisplay = true
+            self.removeKeyMonitor()
+            return nil
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
+    }
+
     private func cancelRecording() {
         isRecording = false
         shortcut = shortcutBeforeRecording
         needsDisplay = true
+        removeKeyMonitor()
     }
 
     private func keyName(for keyCode: UInt16) -> String? {
         let map: [UInt16: String] = [
             49: "space", 36: "return", 48: "tab", 51: "delete", 53: "escape",
-            123: "left", 124: "right", 125: "down", 126: "up",
+            123: "left", 124: "right", 125: "down", 126: "up", 50: "`",
             122: "f1", 120: "f2", 99: "f3", 118: "f4", 96: "f5", 97: "f6",
             98: "f7", 100: "f8", 101: "f9", 109: "f10", 103: "f11", 111: "f12",
+            105: "f13", 107: "f14", 113: "f15", 106: "f16", 64: "f17", 79: "f18", 80: "f19",
         ]
         return map[keyCode]
     }
@@ -507,6 +533,7 @@ class ShortcutRecorderNSView: NSView {
             case "return", "enter": return "\u{21A9}"
             case "delete": return "\u{232B}"
             case "escape": return "\u{238B}"
+            case "`", "~": return "`"
             case "up": return "\u{2191}"
             case "down": return "\u{2193}"
             case "left": return "\u{2190}"
@@ -548,14 +575,22 @@ struct GeneralSettingsTab: View {
 
             Section("Window Switcher") {
                 HStack {
-                    Text("Shortcut")
+                    Text("All Windows")
                     Spacer()
                     ShortcutRecorderView(shortcut: $state.switcherShortcut) {
                         state.save()
                     }
                     .frame(width: 200, height: 28)
                 }
-                Text("Click to record a new shortcut. The hold modifier activates the selected window on release.")
+                HStack {
+                    Text("Cycle Same App")
+                    Spacer()
+                    ShortcutRecorderView(shortcut: $state.sameAppSwitcherShortcut) {
+                        state.save()
+                    }
+                    .frame(width: 200, height: 28)
+                }
+                Text("All Windows: hold modifier + press key to cycle, release to activate.\nCycle Same App: each press brings the next window of the current app to front.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

@@ -27,6 +27,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var switcherModifiers = CGEventFlags.maskCommand
     private var switcherHoldModifier = CGEventFlags.maskCommand
 
+    // Same-app window cycling hotkey
+    private let sameAppHotKeyID: UInt32 = 2
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
@@ -45,9 +48,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hidePanel()
         }
 
-        // Load switcher shortcut from config
+        // Load shortcuts from config
         let config = LaunchpickConfig.load()
         loadSwitcherShortcut(from: config)
+        registerSameAppHotKey(from: config)
 
         // Register launchpick hotkey
         let (keyCode, modifiers) = LaunchpickConfig.parseShortcut(config.shortcut)
@@ -66,6 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.reloadLaunchpickHotKey()
             let config = LaunchpickConfig.load()
             self?.loadSwitcherShortcut(from: config)
+            self?.registerSameAppHotKey(from: config)
         }
 
         // Request accessibility permission (shows system dialog if not granted)
@@ -86,11 +91,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func loadSwitcherShortcut(from config: LaunchpickConfig) {
-        let shortcut = config.switcherShortcut ?? "cmd+tab"
+        let shortcut = config.switcherShortcut ?? "alt+tab"
         let parsed = LaunchpickConfig.parseSwitcherShortcut(shortcut)
         switcherKeyCode = parsed.keyCode
         switcherModifiers = parsed.modifiers
         switcherHoldModifier = parsed.holdModifier
+    }
+
+    private func registerSameAppHotKey(from config: LaunchpickConfig) {
+        HotKeyManager.shared.unregister(id: sameAppHotKeyID)
+        let shortcut = config.sameAppSwitcherShortcut ?? "alt+cmd+p"
+        NSLog("Launchpick: Registering same-app cycling hotkey: \(shortcut)")
+        let (keyCode, modifiers) = LaunchpickConfig.parseShortcut(shortcut)
+        HotKeyManager.shared.register(id: sameAppHotKeyID, keyCode: keyCode, modifiers: modifiers) { [weak self] in
+            DispatchQueue.main.async {
+                self?.cycleAppWindows()
+            }
+        }
+    }
+
+    private func cycleAppWindows() {
+        guard AccessibilityHelper.checkAndRequestPermission() else { return }
+
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
+        let pid = frontApp.processIdentifier
+
+        let allWindows = WindowEnumerator.enumerate()
+        let appWindows = allWindows.filter { $0.pid == pid }
+        guard appWindows.count > 1 else { return }
+
+        // The first window is the frontmost. Activate the second one.
+        let next = appWindows[1]
+
+        if next.isMinimized {
+            AXUIElementSetAttributeValue(
+                next.axWindow,
+                kAXMinimizedAttribute as CFString,
+                kCFBooleanFalse
+            )
+        }
+
+        AXUIElementPerformAction(next.axWindow, kAXRaiseAction as CFString)
+        frontApp.activate(options: [])
     }
 
     // MARK: - Launchpick hotkey handler (cross-feature)
@@ -480,11 +522,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Handle keyDown
         if type == .keyDown {
-            // Check if the pressed key + modifiers match the switcher shortcut (ignoring shift for reverse)
-            let modsWithoutShift = switcherModifiers.subtracting(.maskShift)
-            let currentWithoutShift = flags.intersection([.maskCommand, .maskAlternate, .maskControl])
+            let currentMods = flags.intersection([.maskCommand, .maskAlternate, .maskControl])
 
-            if keyCode == switcherKeyCode && currentWithoutShift == modsWithoutShift {
+            // Check window switcher shortcut (ignoring shift for reverse)
+            let switcherMods = switcherModifiers.subtracting(.maskShift)
+            if keyCode == switcherKeyCode && currentMods == switcherMods {
                 if flags.contains(.maskShift) {
                     DispatchQueue.main.async { [weak self] in
                         self?.switcherPrevious()
@@ -494,7 +536,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         self?.switcherNext()
                     }
                 }
-                return nil // Swallow the event
+                return nil
             }
 
             // Escape while holding modifier — cancel switcher
