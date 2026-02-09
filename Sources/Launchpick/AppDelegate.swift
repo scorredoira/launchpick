@@ -32,6 +32,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var switcherModifiers = CGEventFlags.maskCommand
     private var switcherHoldModifier = CGEventFlags.maskCommand
 
+    // Launcher shortcut (parsed for event tap suppression of system shortcuts)
+    private var launcherKeyCode: Int64 = 49
+    private var launcherModifiers = CGEventFlags.maskCommand
+    private var suppressSystemShortcut = false
+
     // Same-app window cycling hotkey
     private let sameAppHotKeyID: UInt32 = 2
 
@@ -56,6 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Load shortcuts from config
         let config = LaunchpickConfig.load()
         loadSwitcherShortcut(from: config)
+        loadLauncherShortcut(from: config)
         registerSameAppHotKey(from: config)
 
         // Register launchpick hotkey
@@ -75,6 +81,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let config = LaunchpickConfig.load()
             self?.reloadLaunchpickHotKey(from: config)
             self?.loadSwitcherShortcut(from: config)
+            self?.loadLauncherShortcut(from: config)
             self?.registerSameAppHotKey(from: config)
         }
 
@@ -106,6 +113,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.handleLaunchpickHotKey()
             }
         }
+    }
+
+    private func loadLauncherShortcut(from config: LaunchpickConfig) {
+        let parsed = LaunchpickConfig.parseSwitcherShortcut(config.shortcut)
+        launcherKeyCode = parsed.keyCode
+        launcherModifiers = parsed.modifiers
+        suppressSystemShortcut = config.suppressSystemShortcut ?? false
     }
 
     private func loadSwitcherShortcut(from config: LaunchpickConfig) {
@@ -590,6 +604,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     DispatchQueue.main.async { [weak self] in
                         self?.switcherNext()
                     }
+                }
+                return nil
+            }
+
+            // Launcher shortcut — suppress to prevent system shortcut (e.g. Spotlight)
+            let fullMods = flags.intersection([.maskCommand, .maskAlternate, .maskControl, .maskShift])
+            let targetLauncherMods = launcherModifiers.intersection([.maskCommand, .maskAlternate, .maskControl, .maskShift])
+            if suppressSystemShortcut && keyCode == launcherKeyCode && fullMods == targetLauncherMods {
+                DispatchQueue.main.async { [weak self] in
+                    self?.handleLaunchpickHotKey()
                 }
                 return nil
             }

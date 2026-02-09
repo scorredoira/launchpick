@@ -210,6 +210,7 @@ class SettingsState: ObservableObject {
     @Published var shortcut: String = "cmd+shift+space"
     @Published var switcherShortcut: String = "alt+tab"
     @Published var sameAppSwitcherShortcut: String = "alt+cmd+p"
+    @Published var suppressSystemShortcut: Bool = false
     var columns: Int = 4
 
     var selectedIndex: Int? {
@@ -232,6 +233,7 @@ class SettingsState: ObservableObject {
         shortcut = config.shortcut
         switcherShortcut = config.switcherShortcut ?? "alt+tab"
         sameAppSwitcherShortcut = config.sameAppSwitcherShortcut ?? "alt+cmd+p"
+        suppressSystemShortcut = config.suppressSystemShortcut ?? false
         columns = config.columns ?? 4
         launchers = config.launchers.map { EditableLauncher.from($0) }
         selectedID = launchers.first?.id
@@ -242,6 +244,7 @@ class SettingsState: ObservableObject {
             shortcut: shortcut,
             switcherShortcut: switcherShortcut,
             sameAppSwitcherShortcut: sameAppSwitcherShortcut,
+            suppressSystemShortcut: suppressSystemShortcut,
             columns: columns,
             launchers: launchers.map { $0.toConfig() }
         )
@@ -570,7 +573,11 @@ struct GeneralSettingsTab: View {
                     }
                     .frame(width: 200, height: 28)
                 }
-                Text("Click to record a new shortcut")
+                Toggle("Suppress system shortcut (e.g. Spotlight)", isOn: $state.suppressSystemShortcut)
+                    .onChange(of: state.suppressSystemShortcut) { _ in
+                        state.save()
+                    }
+                Text("Click to record a new shortcut. Enable suppress if your shortcut conflicts with a system shortcut like Spotlight.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

@@ -5,6 +5,7 @@ struct LaunchpickConfig: Codable {
     var shortcut: String
     var switcherShortcut: String?
     var sameAppSwitcherShortcut: String?
+    var suppressSystemShortcut: Bool?
     var columns: Int?
     var launchers: [ConfigLauncher]
 
@@ -77,7 +78,7 @@ struct LaunchpickConfig: Codable {
             ]
         }
 
-        return LaunchpickConfig(shortcut: "cmd+shift+space", switcherShortcut: "alt+tab", sameAppSwitcherShortcut: "alt+cmd+p", columns: 4, launchers: launchers)
+        return LaunchpickConfig(shortcut: "cmd+shift+space", switcherShortcut: "alt+tab", sameAppSwitcherShortcut: "alt+cmd+p", suppressSystemShortcut: false, columns: 4, launchers: launchers)
     }
 
     static func parseShortcut(_ shortcut: String) -> (keyCode: UInt32, modifiers: UInt32) {
