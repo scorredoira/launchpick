@@ -39,6 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Same-app window cycling hotkey
     private let sameAppHotKeyID: UInt32 = 2
+    private let sameAppVisibleHotKeyID: UInt32 = 3
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
@@ -63,6 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         loadSwitcherShortcut(from: config)
         loadLauncherShortcut(from: config)
         registerSameAppHotKey(from: config)
+        registerSameAppVisibleHotKey(from: config)
 
         // Register launchpick hotkey
         let (keyCode, modifiers) = LaunchpickConfig.parseShortcut(config.shortcut)
@@ -83,6 +85,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.loadSwitcherShortcut(from: config)
             self?.loadLauncherShortcut(from: config)
             self?.registerSameAppHotKey(from: config)
+            self?.registerSameAppVisibleHotKey(from: config)
         }
 
         // Pre-load system apps in background so first search doesn't lag
@@ -159,6 +162,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     kCFBooleanFalse
                 )
             }
+
+            AXUIElementPerformAction(next.axWindow, kAXRaiseAction as CFString)
+
+            DispatchQueue.main.async {
+                frontApp.activate(options: [])
+            }
+        }
+    }
+
+    private func registerSameAppVisibleHotKey(from config: LaunchpickConfig) {
+        HotKeyManager.shared.unregister(id: sameAppVisibleHotKeyID)
+        let sameAppShortcut = config.sameAppSwitcherShortcut ?? "alt+cmd+p"
+        let shortcut = config.sameAppVisibleShortcut ?? LaunchpickConfig.deriveVisibleShortcut(from: sameAppShortcut)
+        let (keyCode, modifiers) = LaunchpickConfig.parseShortcut(shortcut)
+        HotKeyManager.shared.register(id: sameAppVisibleHotKeyID, keyCode: keyCode, modifiers: modifiers) { [weak self] in
+            DispatchQueue.main.async {
+                self?.cycleAppWindowsVisible()
+            }
+        }
+    }
+
+    private func cycleAppWindowsVisible() {
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
+        let pid = frontApp.processIdentifier
+
+        DispatchQueue.global(qos: .userInteractive).async {
+            let allWindows = WindowEnumerator.enumerate()
+            let appWindows = allWindows.filter { $0.pid == pid && !$0.isMinimized }
+            guard appWindows.count > 1 else { return }
+
+            let next = appWindows.last!
 
             AXUIElementPerformAction(next.axWindow, kAXRaiseAction as CFString)
 

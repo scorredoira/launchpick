@@ -210,6 +210,7 @@ class SettingsState: ObservableObject {
     @Published var shortcut: String = "cmd+shift+space"
     @Published var switcherShortcut: String = "alt+tab"
     @Published var sameAppSwitcherShortcut: String = "alt+cmd+p"
+    @Published var sameAppVisibleShortcut: String = "shift+alt+cmd+p"
     @Published var suppressSystemShortcut: Bool = false
     var columns: Int = 4
 
@@ -233,6 +234,8 @@ class SettingsState: ObservableObject {
         shortcut = config.shortcut
         switcherShortcut = config.switcherShortcut ?? "alt+tab"
         sameAppSwitcherShortcut = config.sameAppSwitcherShortcut ?? "alt+cmd+p"
+        let sameApp = config.sameAppSwitcherShortcut ?? "alt+cmd+p"
+        sameAppVisibleShortcut = config.sameAppVisibleShortcut ?? LaunchpickConfig.deriveVisibleShortcut(from: sameApp)
         suppressSystemShortcut = config.suppressSystemShortcut ?? false
         columns = config.columns ?? 4
         launchers = config.launchers.map { EditableLauncher.from($0) }
@@ -244,6 +247,7 @@ class SettingsState: ObservableObject {
             shortcut: shortcut,
             switcherShortcut: switcherShortcut,
             sameAppSwitcherShortcut: sameAppSwitcherShortcut,
+            sameAppVisibleShortcut: sameAppVisibleShortcut,
             suppressSystemShortcut: suppressSystemShortcut,
             columns: columns,
             launchers: launchers.map { $0.toConfig() }
@@ -599,7 +603,15 @@ struct GeneralSettingsTab: View {
                     }
                     .frame(width: 200, height: 28)
                 }
-                Text("All Windows: hold modifier + press key to cycle, release to activate.\nCycle Same App: each press brings the next window of the current app to front.")
+                HStack {
+                    Text("Cycle Same App (Visible)")
+                    Spacer()
+                    ShortcutRecorderView(shortcut: $state.sameAppVisibleShortcut) {
+                        state.save()
+                    }
+                    .frame(width: 200, height: 28)
+                }
+                Text("All Windows: hold modifier + press key to cycle, release to activate.\nCycle Same App: each press brings the next window of the current app to front.\nCycle Same App (Visible): same but skips minimized windows.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

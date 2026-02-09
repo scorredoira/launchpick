@@ -5,6 +5,7 @@ struct LaunchpickConfig: Codable {
     var shortcut: String
     var switcherShortcut: String?
     var sameAppSwitcherShortcut: String?
+    var sameAppVisibleShortcut: String?
     var suppressSystemShortcut: Bool?
     var columns: Int?
     var launchers: [ConfigLauncher]
@@ -78,7 +79,16 @@ struct LaunchpickConfig: Codable {
             ]
         }
 
-        return LaunchpickConfig(shortcut: "cmd+shift+space", switcherShortcut: "alt+tab", sameAppSwitcherShortcut: "alt+cmd+p", suppressSystemShortcut: false, columns: 4, launchers: launchers)
+        return LaunchpickConfig(shortcut: "cmd+shift+space", switcherShortcut: "alt+tab", sameAppSwitcherShortcut: "alt+cmd+p", sameAppVisibleShortcut: nil, suppressSystemShortcut: false, columns: 4, launchers: launchers)
+    }
+
+    /// Derive the visible-only shortcut by adding shift to the same-app shortcut
+    static func deriveVisibleShortcut(from sameAppShortcut: String) -> String {
+        let parts = sameAppShortcut.lowercased().split(separator: "+").map(String.init)
+        if parts.contains("shift") {
+            return sameAppShortcut
+        }
+        return "shift+" + sameAppShortcut
     }
 
     static func parseShortcut(_ shortcut: String) -> (keyCode: UInt32, modifiers: UInt32) {
