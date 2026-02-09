@@ -8,24 +8,34 @@ struct WindowSwitcherView: View {
             // Window grid
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(
-                        columns: Array(repeating: GridItem(.fixed(148), spacing: 12), count: max(state.columns, 1)),
-                        spacing: 12
-                    ) {
-                        ForEach(Array(state.windows.enumerated()), id: \.element.id) { index, window in
-                            WindowItemView(
-                                window: window,
-                                isSelected: index == state.selectedIndex
-                            )
-                            .id(index)
+                    let cols = max(state.columns, 1)
+                    let items = Array(state.windows.enumerated())
+                    let rowCount = items.isEmpty ? 0 : Int(ceil(Double(items.count) / Double(cols)))
+                    VStack(spacing: 12) {
+                        ForEach(0..<rowCount, id: \.self) { row in
+                            HStack(spacing: 12) {
+                                ForEach(0..<cols, id: \.self) { col in
+                                    let index = row * cols + col
+                                    if index < items.count {
+                                        WindowItemView(
+                                            window: items[index].element,
+                                            isSelected: index == state.selectedIndex
+                                        )
+                                    } else {
+                                        Color.clear.frame(width: 148, height: 148)
+                                    }
+                                }
+                            }
+                            .id(row)
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                 }
                 .onChange(of: state.selectedIndex) { newIndex in
+                    let selectedRow = newIndex / max(state.columns, 1)
                     withAnimation(.easeInOut(duration: 0.15)) {
-                        proxy.scrollTo(newIndex, anchor: .center)
+                        proxy.scrollTo(selectedRow, anchor: .center)
                     }
                 }
             }
