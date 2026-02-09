@@ -5,10 +5,13 @@ struct WindowSwitcherView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            // Horizontal window strip
+            // Window grid
             ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVGrid(
+                        columns: Array(repeating: GridItem(.fixed(148), spacing: 12), count: max(state.columns, 1)),
+                        spacing: 12
+                    ) {
                         ForEach(Array(state.windows.enumerated()), id: \.element.id) { index, window in
                             WindowItemView(
                                 window: window,

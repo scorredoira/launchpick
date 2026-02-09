@@ -14,6 +14,7 @@ struct WindowInfo: Identifiable {
 class WindowSwitcherState: ObservableObject {
     @Published var windows: [WindowInfo] = []
     @Published var selectedIndex: Int = 0
+    @Published var columns: Int = 10
 
     var selectedWindow: WindowInfo? {
         guard selectedIndex >= 0, selectedIndex < windows.count else { return nil }

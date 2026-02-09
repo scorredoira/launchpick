@@ -721,18 +721,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     self.switcherState.selectedIndex = 0
                 }
 
-                let itemCount = min(windows.count, 10)
-                let panelWidth = min(CGFloat(itemCount) * 160 + 32, NSScreen.main?.frame.width ?? 800 * 0.8)
-                let panelHeight: CGFloat = 230
+                let screenFrame = (NSScreen.main ?? NSScreen.screens.first)?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+                let maxPanelWidth = screenFrame.width * 0.9
+                let maxColumns = max(1, Int((maxPanelWidth - 32) / 160))
+                let columns = min(maxColumns, windows.count)
+                let rows = Int(ceil(Double(windows.count) / Double(columns)))
+
+                self.switcherState.columns = columns
+
+                let panelWidth = CGFloat(columns) * 160 + 32
+                // 70 = top padding (12) + scroll padding (16) + info area (~42)
+                let panelHeight = min(70 + CGFloat(rows) * 160, screenFrame.height * 0.85)
 
                 self.switcherPanel.setContentSize(NSSize(width: panelWidth, height: panelHeight))
 
-                if let screen = NSScreen.main {
-                    let screenFrame = screen.frame
-                    let x = screenFrame.midX - panelWidth / 2
-                    let y = screenFrame.midY - panelHeight / 2
-                    self.switcherPanel.setFrameOrigin(NSPoint(x: x, y: y))
-                }
+                let x = screenFrame.midX - panelWidth / 2
+                let y = screenFrame.midY - panelHeight / 2
+                self.switcherPanel.setFrameOrigin(NSPoint(x: x, y: y))
 
                 self.switcherPanel.orderFront(nil)
                 self.isSwitcherVisible = true
