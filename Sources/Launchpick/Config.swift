@@ -7,6 +7,7 @@ struct LaunchpickConfig: Codable {
     var sameAppSwitcherShortcut: String?
     var sameAppVisibleShortcut: String?
     var suppressSystemShortcut: Bool?
+    var spotlightShortcut: String?
     var columns: Int?
     var launchers: [ConfigLauncher]
 
@@ -79,7 +80,7 @@ struct LaunchpickConfig: Codable {
             ]
         }
 
-        return LaunchpickConfig(shortcut: "cmd+shift+space", switcherShortcut: "alt+tab", sameAppSwitcherShortcut: "alt+cmd+p", sameAppVisibleShortcut: nil, suppressSystemShortcut: false, columns: 4, launchers: launchers)
+        return LaunchpickConfig(shortcut: "cmd+shift+space", switcherShortcut: "alt+tab", sameAppSwitcherShortcut: "alt+cmd+p", sameAppVisibleShortcut: nil, suppressSystemShortcut: false, spotlightShortcut: nil, columns: 4, launchers: launchers)
     }
 
     /// Derive the visible-only shortcut by adding shift to the same-app shortcut
@@ -150,6 +151,28 @@ struct LaunchpickConfig: Codable {
         return (keyCode, modifiers, holdModifier)
     }
 
+    static func parseShortcutForSymbolicHotKey(_ shortcut: String) -> (keyCode: Int, modifiers: Int) {
+        let parts = shortcut.lowercased().split(separator: "+").map(String.init)
+
+        var modifiers = 0
+        var keyCode = 49 // default: space
+
+        for part in parts {
+            switch part {
+            case "cmd", "command": modifiers |= 1048576   // NSEvent.ModifierFlags.command
+            case "shift": modifiers |= 131072              // NSEvent.ModifierFlags.shift
+            case "opt", "option", "alt": modifiers |= 524288 // NSEvent.ModifierFlags.option
+            case "ctrl", "control": modifiers |= 262144    // NSEvent.ModifierFlags.control
+            default:
+                if let code = keyCodeMap[part] {
+                    keyCode = Int(code)
+                }
+            }
+        }
+
+        return (keyCode, modifiers)
+    }
+
     private static let keyCodeMap: [String: UInt32] = [
         "a": 0, "b": 11, "c": 8, "d": 2, "e": 14, "f": 3,
         "g": 5, "h": 4, "i": 34, "j": 38, "k": 40, "l": 37,
@@ -164,6 +187,36 @@ struct LaunchpickConfig: Codable {
         "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
         "f13": 105, "f14": 107, "f15": 113, "f16": 106, "f17": 64, "f18": 79, "f19": 80,
     ]
+}
+
+enum SpotlightShortcutManager {
+    static func applyShortcut(_ shortcut: String) {
+        let (keyCode, modifiers) = LaunchpickConfig.parseShortcutForSymbolicHotKey(shortcut)
+        writeSymbolicHotKey(keyCode: keyCode, modifiers: modifiers)
+    }
+
+    static func restoreDefault() {
+        // Cmd+Space: keyCode 49, modifiers 1048576 (command)
+        writeSymbolicHotKey(keyCode: 49, modifiers: 1048576)
+    }
+
+    private static func writeSymbolicHotKey(keyCode: Int, modifiers: Int) {
+        DispatchQueue.global(qos: .utility).async {
+            let plistXml = "<dict><key>enabled</key><true/><key>value</key><dict><key>parameters</key><array><integer>65535</integer><integer>\(keyCode)</integer><integer>\(modifiers)</integer></array><key>type</key><string>standard</string></dict></dict>"
+
+            let writeProcess = Process()
+            writeProcess.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+            writeProcess.arguments = ["write", "com.apple.symbolichotkeys", "AppleSymbolicHotKeys", "-dict-add", "64", plistXml]
+            try? writeProcess.run()
+            writeProcess.waitUntilExit()
+
+            let reloadProcess = Process()
+            reloadProcess.executableURL = URL(fileURLWithPath: "/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings")
+            reloadProcess.arguments = ["-u"]
+            try? reloadProcess.run()
+            reloadProcess.waitUntilExit()
+        }
+    }
 }
 
 struct ConfigLauncher: Codable {

@@ -65,6 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         loadLauncherShortcut(from: config)
         registerSameAppHotKey(from: config)
         registerSameAppVisibleHotKey(from: config)
+        applySpotlightShortcut(from: config)
 
         // Register launchpick hotkey
         let (keyCode, modifiers) = LaunchpickConfig.parseShortcut(config.shortcut)
@@ -86,6 +87,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.loadLauncherShortcut(from: config)
             self?.registerSameAppHotKey(from: config)
             self?.registerSameAppVisibleHotKey(from: config)
+            self?.applySpotlightShortcut(from: config)
         }
 
         // Pre-load system apps in background so first search doesn't lag
@@ -123,6 +125,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         launcherKeyCode = parsed.keyCode
         launcherModifiers = parsed.modifiers
         suppressSystemShortcut = config.suppressSystemShortcut ?? false
+    }
+
+    private func applySpotlightShortcut(from config: LaunchpickConfig) {
+        if let shortcut = config.spotlightShortcut, !shortcut.isEmpty {
+            SpotlightShortcutManager.applyShortcut(shortcut)
+        }
     }
 
     private func loadSwitcherShortcut(from config: LaunchpickConfig) {

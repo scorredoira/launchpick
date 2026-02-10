@@ -212,6 +212,7 @@ class SettingsState: ObservableObject {
     @Published var sameAppSwitcherShortcut: String = "alt+cmd+p"
     @Published var sameAppVisibleShortcut: String = "shift+alt+cmd+p"
     @Published var suppressSystemShortcut: Bool = false
+    @Published var spotlightShortcut: String = ""
     var columns: Int = 4
 
     var selectedIndex: Int? {
@@ -237,18 +238,23 @@ class SettingsState: ObservableObject {
         let sameApp = config.sameAppSwitcherShortcut ?? "alt+cmd+p"
         sameAppVisibleShortcut = config.sameAppVisibleShortcut ?? LaunchpickConfig.deriveVisibleShortcut(from: sameApp)
         suppressSystemShortcut = config.suppressSystemShortcut ?? false
+        spotlightShortcut = config.spotlightShortcut ?? ""
         columns = config.columns ?? 4
         launchers = config.launchers.map { EditableLauncher.from($0) }
         selectedID = launchers.first?.id
     }
 
     func save() {
+        if !spotlightShortcut.isEmpty {
+            suppressSystemShortcut = false
+        }
         let config = LaunchpickConfig(
             shortcut: shortcut,
             switcherShortcut: switcherShortcut,
             sameAppSwitcherShortcut: sameAppSwitcherShortcut,
             sameAppVisibleShortcut: sameAppVisibleShortcut,
             suppressSystemShortcut: suppressSystemShortcut,
+            spotlightShortcut: spotlightShortcut.isEmpty ? nil : spotlightShortcut,
             columns: columns,
             launchers: launchers.map { $0.toConfig() }
         )
@@ -428,6 +434,9 @@ class ShortcutRecorderNSView: NSView {
         if isRecording {
             text = "Press shortcut\u{2026}"
             color = .controlAccentColor
+        } else if shortcut.isEmpty {
+            text = "Not set"
+            color = .secondaryLabelColor
         } else {
             text = displayString(for: shortcut)
             color = .labelColor
@@ -581,7 +590,36 @@ struct GeneralSettingsTab: View {
                     .onChange(of: state.suppressSystemShortcut) { _ in
                         state.save()
                     }
+                    .disabled(!state.spotlightShortcut.isEmpty)
                 Text("Click to record a new shortcut. Enable suppress if your shortcut conflicts with a system shortcut like Spotlight.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Section("System Spotlight Shortcut") {
+                HStack {
+                    Text("Spotlight Shortcut")
+                    Spacer()
+                    HStack(spacing: 4) {
+                        ShortcutRecorderView(shortcut: $state.spotlightShortcut) {
+                            state.save()
+                        }
+                        .frame(width: 200, height: 28)
+
+                        if !state.spotlightShortcut.isEmpty {
+                            Button(action: {
+                                SpotlightShortcutManager.restoreDefault()
+                                state.spotlightShortcut = ""
+                                state.save()
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                Text("Reassign the system Spotlight shortcut to a different key. This avoids the need to suppress when using the same key for Launchpick.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
