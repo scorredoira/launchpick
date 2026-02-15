@@ -618,6 +618,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
+            // The tap was disabled — we may have missed a flagsChanged event.
+            // If the switcher is visible, check whether the modifier was released
+            // while the tap was off and dismiss if needed.
+            if isSwitcherVisible {
+                let currentFlags = CGEventSource.flagsState(.combinedSessionState)
+                if !currentFlags.contains(switcherHoldModifier) {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.activateSelectedWindow()
+                    }
+                }
+            }
             return Unmanaged.passUnretained(event)
         }
 
@@ -749,6 +760,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 self.switcherPanel.orderFront(nil)
                 self.isSwitcherVisible = true
+
+                // Guard against race condition: if the user released the
+                // hold modifier while we were enumerating windows, the
+                // flagsChanged event already fired (and was ignored because
+                // isSwitcherVisible was still false).  Poll the current
+                // modifier state and dismiss immediately if needed.
+                let currentFlags = CGEventSource.flagsState(.combinedSessionState)
+                if !currentFlags.contains(self.switcherHoldModifier) {
+                    self.activateSelectedWindow()
+                }
             }
         }
     }
