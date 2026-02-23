@@ -716,16 +716,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Load groupByApp setting
+        let config = LaunchpickConfig.load()
+        let groupByApp = config.groupByApp ?? false
+
         // Enumerate windows off the main thread
         DispatchQueue.global(qos: .userInteractive).async { [weak self] in
-            let windows = WindowEnumerator.enumerate()
+            var windows = WindowEnumerator.enumerate()
             guard !windows.isEmpty else {
                 DispatchQueue.main.async { self?.switcherPendingAdvances = 0 }
                 return
             }
 
+            if groupByApp {
+                windows = WindowEnumerator.groupByApplication(windows)
+            }
+
             DispatchQueue.main.async {
                 guard let self = self else { return }
+                self.switcherState.groupByApp = groupByApp
                 self.switcherState.windows = windows
 
                 // Apply all pending advances (handles rapid Tab presses during async load)

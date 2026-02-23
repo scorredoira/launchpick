@@ -213,6 +213,7 @@ class SettingsState: ObservableObject {
     @Published var sameAppVisibleShortcut: String = "shift+alt+cmd+p"
     @Published var suppressSystemShortcut: Bool = false
     @Published var spotlightShortcut: String = ""
+    @Published var groupByApp: Bool = false
     var columns: Int = 4
 
     var selectedIndex: Int? {
@@ -239,6 +240,7 @@ class SettingsState: ObservableObject {
         sameAppVisibleShortcut = config.sameAppVisibleShortcut ?? LaunchpickConfig.deriveVisibleShortcut(from: sameApp)
         suppressSystemShortcut = config.suppressSystemShortcut ?? false
         spotlightShortcut = config.spotlightShortcut ?? ""
+        groupByApp = config.groupByApp ?? false
         columns = config.columns ?? 4
         launchers = config.launchers.map { EditableLauncher.from($0) }
         selectedID = launchers.first?.id
@@ -255,6 +257,7 @@ class SettingsState: ObservableObject {
             sameAppVisibleShortcut: sameAppVisibleShortcut,
             suppressSystemShortcut: suppressSystemShortcut,
             spotlightShortcut: spotlightShortcut.isEmpty ? nil : spotlightShortcut,
+            groupByApp: groupByApp ? true : nil,
             columns: columns,
             launchers: launchers.map { $0.toConfig() }
         )
@@ -625,6 +628,8 @@ struct GeneralSettingsTab: View {
             }
 
             Section("Window Switcher") {
+                Toggle("Group windows by application", isOn: $state.groupByApp)
+                    .onChange(of: state.groupByApp) { _ in state.save() }
                 HStack {
                     Text("All Windows")
                     Spacer()

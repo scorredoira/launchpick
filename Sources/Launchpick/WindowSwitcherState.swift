@@ -15,6 +15,7 @@ class WindowSwitcherState: ObservableObject {
     @Published var windows: [WindowInfo] = []
     @Published var selectedIndex: Int = 0
     @Published var columns: Int = 10
+    @Published var groupByApp: Bool = false
 
     var selectedWindow: WindowInfo? {
         guard selectedIndex >= 0, selectedIndex < windows.count else { return nil }
@@ -37,6 +38,50 @@ class WindowSwitcherState: ObservableObject {
 func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
 
 enum WindowEnumerator {
+    /// Groups windows by application (pid), keeping one representative per app.
+    /// The representative is the most recent (lowest Z-order) non-minimized window,
+    /// or the first minimized window if all are minimized.
+    /// isMinimized is set to true only if ALL windows of that app are minimized.
+    static func groupByApplication(_ windows: [WindowInfo]) -> [WindowInfo] {
+        var seen = Set<pid_t>()
+        var groups: [(pid: pid_t, representative: WindowInfo, allMinimized: Bool)] = []
+
+        for window in windows {
+            if seen.contains(window.pid) {
+                // Update existing group: if this window is not minimized, update representative
+                if let idx = groups.firstIndex(where: { $0.pid == window.pid }) {
+                    if !window.isMinimized {
+                        groups[idx].allMinimized = false
+                    }
+                }
+                continue
+            }
+            seen.insert(window.pid)
+
+            // Find if this app has any non-minimized windows
+            let appWindows = windows.filter { $0.pid == window.pid }
+            let allMinimized = appWindows.allSatisfy { $0.isMinimized }
+
+            // Use the first window as representative (it has the best Z-order)
+            groups.append((pid: window.pid, representative: window, allMinimized: allMinimized))
+        }
+
+        return groups.map { group in
+            if group.allMinimized != group.representative.isMinimized {
+                return WindowInfo(
+                    id: group.representative.id,
+                    title: group.representative.title,
+                    appName: group.representative.appName,
+                    appIcon: group.representative.appIcon,
+                    pid: group.representative.pid,
+                    isMinimized: group.allMinimized,
+                    axWindow: group.representative.axWindow
+                )
+            }
+            return group.representative
+        }
+    }
+
     static func enumerate() -> [WindowInfo] {
         let ownPID = ProcessInfo.processInfo.processIdentifier
 

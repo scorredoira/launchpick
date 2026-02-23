@@ -43,14 +43,21 @@ struct WindowSwitcherView: View {
             // Selected window info
             if let selected = state.selectedWindow {
                 VStack(spacing: 2) {
-                    Text(selected.title)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    Text(selected.appName)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
+                    if state.groupByApp {
+                        Text(selected.appName)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                    } else {
+                        Text(selected.title)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        Text(selected.appName)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
                 }
                 .padding(.bottom, 20)
             }

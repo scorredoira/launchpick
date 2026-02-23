@@ -8,6 +8,7 @@ struct LaunchpickConfig: Codable {
     var sameAppVisibleShortcut: String?
     var suppressSystemShortcut: Bool?
     var spotlightShortcut: String?
+    var groupByApp: Bool?
     var columns: Int?
     var launchers: [ConfigLauncher]
 
