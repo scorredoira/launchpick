@@ -34,6 +34,11 @@ Option+Tab (configurable) shows every individual window across all apps — incl
 
 Option+Cmd+P (configurable) cycles through windows of the current app — each press brings the next window to the front instantly, no UI needed. Works with minimized windows too. Useful when you have multiple VS Code projects, Chrome windows, or Terminal sessions open.
 
+## Requirements
+
+- **macOS 13 (Ventura) or later**
+- Apple Silicon (M1, M2, M3, M4) or Intel Mac
+
 ## Download
 
 Download the latest release for your Mac:

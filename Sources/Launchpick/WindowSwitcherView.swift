@@ -79,7 +79,35 @@ struct WindowItemView: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 128, height: 128)
 
-            if window.isMinimized {
+            if window.visibleCount > 0 || window.minimizedCount > 0 {
+                // Grouped mode: show instance counts
+                HStack(spacing: 3) {
+                    if window.visibleCount > 0 {
+                        HStack(spacing: 2) {
+                            Text("\(window.visibleCount)")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.blue.opacity(0.85)))
+                    }
+                    if window.minimizedCount > 0 {
+                        HStack(spacing: 2) {
+                            Text("\(window.minimizedCount)")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                            Image(systemName: "minus")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.white.opacity(0.9))
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.yellow.opacity(0.85)))
+                    }
+                }
+                .offset(x: 4, y: 4)
+            } else if window.isMinimized {
                 Image(systemName: "minus.circle.fill")
                     .font(.system(size: 20))
                     .foregroundColor(.yellow)

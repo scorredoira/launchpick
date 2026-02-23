@@ -9,6 +9,8 @@ struct WindowInfo: Identifiable {
     let pid: pid_t
     let isMinimized: Bool
     let axWindow: AXUIElement
+    var visibleCount: Int = 0
+    var minimizedCount: Int = 0
 }
 
 class WindowSwitcherState: ObservableObject {
@@ -67,18 +69,21 @@ enum WindowEnumerator {
         }
 
         return groups.map { group in
-            if group.allMinimized != group.representative.isMinimized {
-                return WindowInfo(
-                    id: group.representative.id,
-                    title: group.representative.title,
-                    appName: group.representative.appName,
-                    appIcon: group.representative.appIcon,
-                    pid: group.representative.pid,
-                    isMinimized: group.allMinimized,
-                    axWindow: group.representative.axWindow
-                )
-            }
-            return group.representative
+            let appWindows = windows.filter { $0.pid == group.pid }
+            let visibleCount = appWindows.filter { !$0.isMinimized }.count
+            let minimizedCount = appWindows.filter { $0.isMinimized }.count
+
+            return WindowInfo(
+                id: group.representative.id,
+                title: group.representative.title,
+                appName: group.representative.appName,
+                appIcon: group.representative.appIcon,
+                pid: group.representative.pid,
+                isMinimized: group.allMinimized,
+                axWindow: group.representative.axWindow,
+                visibleCount: visibleCount,
+                minimizedCount: minimizedCount
+            )
         }
     }
 
