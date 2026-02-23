@@ -79,7 +79,7 @@ struct WindowItemView: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 128, height: 128)
 
-            if window.visibleCount > 0 || window.minimizedCount > 0 {
+            if window.visibleCount + window.minimizedCount > 1 {
                 // Grouped mode: show instance counts
                 HStack(spacing: 3) {
                     if window.visibleCount > 0 {
