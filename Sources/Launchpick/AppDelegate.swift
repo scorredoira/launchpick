@@ -152,30 +152,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func cycleAppWindows() {
+    private func cycleAppWindows(visibleOnly: Bool = false) {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
         let pid = frontApp.processIdentifier
 
         DispatchQueue.global(qos: .userInteractive).async {
-            let allWindows = WindowEnumerator.enumerate()
-            let appWindows = allWindows.filter { $0.pid == pid }
+            var appWindows = WindowEnumerator.enumerateForApp(pid: pid)
+            if visibleOnly { appWindows = appWindows.filter { !$0.isMinimized } }
             guard appWindows.count > 1 else { return }
 
             let next = appWindows.last!
-
-            if next.isMinimized {
-                AXUIElementSetAttributeValue(
-                    next.axWindow,
-                    kAXMinimizedAttribute as CFString,
-                    kCFBooleanFalse
-                )
-            }
-
-            AXUIElementPerformAction(next.axWindow, kAXRaiseAction as CFString)
-
-            DispatchQueue.main.async {
-                frontApp.activate(options: [])
-            }
+            self.raiseAndActivate(window: next, pid: pid)
         }
     }
 
@@ -186,27 +173,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let (keyCode, modifiers) = LaunchpickConfig.parseShortcut(shortcut)
         HotKeyManager.shared.register(id: sameAppVisibleHotKeyID, keyCode: keyCode, modifiers: modifiers) { [weak self] in
             DispatchQueue.main.async {
-                self?.cycleAppWindowsVisible()
+                self?.cycleAppWindows(visibleOnly: true)
             }
         }
     }
 
-    private func cycleAppWindowsVisible() {
-        guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
-        let pid = frontApp.processIdentifier
-
-        DispatchQueue.global(qos: .userInteractive).async {
-            let allWindows = WindowEnumerator.enumerate()
-            let appWindows = allWindows.filter { $0.pid == pid && !$0.isMinimized }
-            guard appWindows.count > 1 else { return }
-
-            let next = appWindows.last!
-
-            AXUIElementPerformAction(next.axWindow, kAXRaiseAction as CFString)
-
+    /// Raises a window and activates its app. Must be called off the main thread.
+    private func raiseAndActivate(window: WindowInfo, pid: pid_t) {
+        guard let axWindow = window.resolveAXWindow() else {
             DispatchQueue.main.async {
-                frontApp.activate(options: [])
+                NSRunningApplication(processIdentifier: pid)?.activate(options: [])
             }
+            return
+        }
+        if window.isMinimized {
+            AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        }
+        AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
+        DispatchQueue.main.async {
+            NSRunningApplication(processIdentifier: pid)?.activate(options: [])
         }
     }
 
@@ -720,66 +705,87 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let config = LaunchpickConfig.load()
         let groupByApp = config.groupByApp ?? false
 
-        // Enumerate windows off the main thread
+        // Instant display using CG-only enumeration (no AX calls)
+        var windows = WindowEnumerator.enumerateFast()
+        guard !windows.isEmpty else {
+            switcherPendingAdvances = 0
+            return
+        }
+
+        if groupByApp {
+            windows = WindowEnumerator.groupByApplication(windows)
+        }
+
+        switcherState.groupByApp = groupByApp
+        switcherState.windows = windows
+
+        // Apply all pending advances (handles rapid Tab presses)
+        let pending = switcherPendingAdvances
+        switcherPendingAdvances = 0
+
+        if pending > 0 {
+            switcherState.selectedIndex = min(pending, windows.count - 1)
+        } else if pending < 0 {
+            switcherState.selectedIndex = max(windows.count + pending, 0)
+        } else {
+            switcherState.selectedIndex = 0
+        }
+
+        let screenFrame = (NSScreen.main ?? NSScreen.screens.first)?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let maxPanelWidth = screenFrame.width * 0.9
+        let maxColumns = max(1, Int((maxPanelWidth - 32) / 160))
+        let columns = min(maxColumns, windows.count)
+        let rows = Int(ceil(Double(windows.count) / Double(columns)))
+
+        switcherState.columns = columns
+
+        let panelWidth = CGFloat(columns) * 160 + 32
+        // 70 = top padding (12) + scroll padding (16) + info area (~42)
+        let panelHeight = min(70 + CGFloat(rows) * 160, screenFrame.height * 0.85)
+
+        switcherPanel.setContentSize(NSSize(width: panelWidth, height: panelHeight))
+
+        let x = screenFrame.midX - panelWidth / 2
+        let y = screenFrame.midY - panelHeight / 2
+        switcherPanel.setFrameOrigin(NSPoint(x: x, y: y))
+
+        switcherPanel.orderFront(nil)
+        isSwitcherVisible = true
+
+        // Background: resolve real titles, minimized windows, and AXUIElements
         DispatchQueue.global(qos: .userInteractive).async { [weak self] in
-            var windows = WindowEnumerator.enumerate()
-            guard !windows.isEmpty else {
-                DispatchQueue.main.async { self?.switcherPendingAdvances = 0 }
-                return
-            }
-
+            var fullWindows = WindowEnumerator.enumerate()
             if groupByApp {
-                windows = WindowEnumerator.groupByApplication(windows)
+                fullWindows = WindowEnumerator.groupByApplication(fullWindows)
             }
-
             DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.switcherState.groupByApp = groupByApp
-                self.switcherState.windows = windows
+                guard let self = self, self.isSwitcherVisible else { return }
+                let currentIndex = self.switcherState.selectedIndex
+                self.switcherState.windows = fullWindows
+                self.switcherState.selectedIndex = min(currentIndex, max(fullWindows.count - 1, 0))
 
-                // Apply all pending advances (handles rapid Tab presses during async load)
-                let pending = self.switcherPendingAdvances
-                self.switcherPendingAdvances = 0
-
-                if pending > 0 {
-                    self.switcherState.selectedIndex = min(pending, windows.count - 1)
-                } else if pending < 0 {
-                    self.switcherState.selectedIndex = max(windows.count + pending, 0)
-                } else {
-                    self.switcherState.selectedIndex = 0
-                }
-
+                // Re-layout panel if window count changed
                 let screenFrame = (NSScreen.main ?? NSScreen.screens.first)?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
                 let maxPanelWidth = screenFrame.width * 0.9
                 let maxColumns = max(1, Int((maxPanelWidth - 32) / 160))
-                let columns = min(maxColumns, windows.count)
-                let rows = Int(ceil(Double(windows.count) / Double(columns)))
-
+                let columns = min(maxColumns, fullWindows.count)
+                let rows = Int(ceil(Double(fullWindows.count) / Double(columns)))
                 self.switcherState.columns = columns
 
                 let panelWidth = CGFloat(columns) * 160 + 32
-                // 70 = top padding (12) + scroll padding (16) + info area (~42)
                 let panelHeight = min(70 + CGFloat(rows) * 160, screenFrame.height * 0.85)
-
                 self.switcherPanel.setContentSize(NSSize(width: panelWidth, height: panelHeight))
-
                 let x = screenFrame.midX - panelWidth / 2
                 let y = screenFrame.midY - panelHeight / 2
                 self.switcherPanel.setFrameOrigin(NSPoint(x: x, y: y))
-
-                self.switcherPanel.orderFront(nil)
-                self.isSwitcherVisible = true
-
-                // Guard against race condition: if the user released the
-                // hold modifier while we were enumerating windows, the
-                // flagsChanged event already fired (and was ignored because
-                // isSwitcherVisible was still false).  Poll the current
-                // modifier state and dismiss immediately if needed.
-                let currentFlags = CGEventSource.flagsState(.combinedSessionState)
-                if !currentFlags.contains(self.switcherHoldModifier) {
-                    self.activateSelectedWindow()
-                }
             }
+        }
+
+        // Guard against race condition: if the user released the
+        // hold modifier while we were setting up, dismiss immediately.
+        let currentFlags = CGEventSource.flagsState(.combinedSessionState)
+        if !currentFlags.contains(switcherHoldModifier) {
+            activateSelectedWindow()
         }
     }
 
@@ -793,28 +799,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard let window = window else { return }
 
-        // Do ALL AX operations off the main thread.
-        // AXUIElement calls can block for seconds if the target app is unresponsive.
         let pid = window.pid
-        let axWindow = window.axWindow
-        let isMinimized = window.isMinimized
-
-        DispatchQueue.global(qos: .userInteractive).async {
-            if isMinimized {
-                AXUIElementSetAttributeValue(
-                    axWindow,
-                    kAXMinimizedAttribute as CFString,
-                    kCFBooleanFalse
-                )
-            }
-
-            AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-
-            DispatchQueue.main.async {
-                if let app = NSRunningApplication(processIdentifier: pid) {
-                    app.activate(options: [])
-                }
-            }
+        DispatchQueue.global(qos: .userInteractive).async { [weak self] in
+            self?.raiseAndActivate(window: window, pid: pid)
         }
     }
 

@@ -8,9 +8,25 @@ struct WindowInfo: Identifiable {
     let appIcon: NSImage
     let pid: pid_t
     let isMinimized: Bool
-    let axWindow: AXUIElement
+    var axWindow: AXUIElement?
     var visibleCount: Int = 0
     var minimizedCount: Int = 0
+
+    func resolveAXWindow() -> AXUIElement? {
+        if let ax = axWindow { return ax }
+        let axApp = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(axApp, 1.0)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let axWindows = windowsRef as? [AXUIElement] else { return nil }
+        for ax in axWindows {
+            var wid: CGWindowID = 0
+            if _AXUIElementGetWindow(ax, &wid) == .success && wid == id {
+                return ax
+            }
+        }
+        return nil
+    }
 }
 
 class WindowSwitcherState: ObservableObject {
@@ -40,65 +56,16 @@ class WindowSwitcherState: ObservableObject {
 func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
 
 enum WindowEnumerator {
-    /// Groups windows by application (pid), keeping one representative per app.
-    /// The representative is the most recent (lowest Z-order) non-minimized window,
-    /// or the first minimized window if all are minimized.
-    /// isMinimized is set to true only if ALL windows of that app are minimized.
-    static func groupByApplication(_ windows: [WindowInfo]) -> [WindowInfo] {
-        var seen = Set<pid_t>()
-        var groups: [(pid: pid_t, representative: WindowInfo, allMinimized: Bool)] = []
 
-        for window in windows {
-            if seen.contains(window.pid) {
-                // Update existing group: if this window is not minimized, update representative
-                if let idx = groups.firstIndex(where: { $0.pid == window.pid }) {
-                    if !window.isMinimized {
-                        groups[idx].allMinimized = false
-                    }
-                }
-                continue
-            }
-            seen.insert(window.pid)
+    // MARK: - Shared helpers
 
-            // Find if this app has any non-minimized windows
-            let appWindows = windows.filter { $0.pid == window.pid }
-            let allMinimized = appWindows.allSatisfy { $0.isMinimized }
-
-            // Use the first window as representative (it has the best Z-order)
-            groups.append((pid: window.pid, representative: window, allMinimized: allMinimized))
-        }
-
-        return groups.map { group in
-            let appWindows = windows.filter { $0.pid == group.pid }
-            let visibleCount = appWindows.filter { !$0.isMinimized }.count
-            let minimizedCount = appWindows.filter { $0.isMinimized }.count
-
-            return WindowInfo(
-                id: group.representative.id,
-                title: group.representative.title,
-                appName: group.representative.appName,
-                appIcon: group.representative.appIcon,
-                pid: group.representative.pid,
-                isMinimized: group.allMinimized,
-                axWindow: group.representative.axWindow,
-                visibleCount: visibleCount,
-                minimizedCount: minimizedCount
-            )
-        }
-    }
-
-    static func enumerate() -> [WindowInfo] {
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-
-        // Get on-screen windows via CGWindowList for Z-ordering
+    private static func zOrderMap() -> [CGWindowID: Int] {
         guard let cgWindowList = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
         ) as? [[String: Any]] else {
-            return []
+            return [:]
         }
-
-        // Build Z-order map: windowID -> z-index (lower = more recent / on top)
         var zOrder: [CGWindowID: Int] = [:]
         for (index, info) in cgWindowList.enumerated() {
             guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
@@ -107,78 +74,202 @@ enum WindowEnumerator {
             }
             zOrder[windowID] = index
         }
+        return zOrder
+    }
 
-        // Enumerate all windows via Accessibility API
+    private static func appIcon(for app: NSRunningApplication) -> NSImage {
+        app.icon ?? NSImage(systemSymbolName: "app.fill", accessibilityDescription: nil) ?? NSImage()
+    }
+
+    private static func readWindowInfo(from axWindow: AXUIElement, appName: String, appIcon: NSImage, pid: pid_t) -> WindowInfo? {
+        var titleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleRef)
+        let title = titleRef as? String ?? ""
+        guard !title.isEmpty else { return nil }
+
+        var minimizedRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedRef)
+        let isMinimized = (minimizedRef as? Bool) ?? false
+
+        var windowID: CGWindowID = 0
+        let axErr = _AXUIElementGetWindow(axWindow, &windowID)
+        let finalID: CGWindowID = (axErr == .success && windowID != 0) ? windowID : CGWindowID(arc4random())
+
+        return WindowInfo(
+            id: finalID, title: title, appName: appName, appIcon: appIcon,
+            pid: pid, isMinimized: isMinimized, axWindow: axWindow
+        )
+    }
+
+    // MARK: - Fast enumeration (CG only, no AX)
+
+    /// Returns visible windows instantly using CGWindowList. axWindow is nil — resolve on demand.
+    static func enumerateFast() -> [WindowInfo] {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+
+        guard let cgWindowList = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return []
+        }
+
+        var appIcons: [pid_t: (name: String, icon: NSImage)] = [:]
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+            appIcons[app.processIdentifier] = (app.localizedName ?? "Unknown", appIcon(for: app))
+        }
+
         var results: [WindowInfo] = []
-        var minimizedResults: [WindowInfo] = []
 
-        let runningApps = NSWorkspace.shared.runningApplications
-        for app in runningApps {
-            guard app.activationPolicy == .regular,
-                  app.processIdentifier != ownPID else {
+        for info in cgWindowList {
+            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
+                  let windowID = info[kCGWindowNumber as String] as? CGWindowID,
+                  let pid = info[kCGWindowOwnerPID as String] as? pid_t,
+                  pid != ownPID,
+                  let appInfo = appIcons[pid] else {
                 continue
             }
 
-            let axApp = AXUIElementCreateApplication(app.processIdentifier)
-            var windowsRef: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-                  let axWindows = windowsRef as? [AXUIElement] else {
-                continue
-            }
+            let cgTitle = info[kCGWindowName as String] as? String ?? ""
+            let title = cgTitle.isEmpty ? appInfo.name : cgTitle
 
-            let appName = app.localizedName ?? "Unknown"
-            let appIcon = app.icon ?? NSImage(systemSymbolName: "app.fill", accessibilityDescription: nil) ?? NSImage()
+            results.append(WindowInfo(
+                id: windowID, title: title, appName: appInfo.name, appIcon: appInfo.icon,
+                pid: pid, isMinimized: false, axWindow: nil
+            ))
+        }
 
-            for axWindow in axWindows {
-                // Get window title
-                var titleRef: CFTypeRef?
-                AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleRef)
-                let title = titleRef as? String ?? ""
+        return results
+    }
 
-                // Skip windows with empty titles
-                guard !title.isEmpty else { continue }
+    // MARK: - Grouping
 
-                // Check if minimized
-                var minimizedRef: CFTypeRef?
-                AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedRef)
-                let isMinimized = (minimizedRef as? Bool) ?? false
+    static func groupByApplication(_ windows: [WindowInfo]) -> [WindowInfo] {
+        let grouped = Dictionary(grouping: windows, by: { $0.pid })
 
-                // Get window ID via private API
-                var windowID: CGWindowID = 0
-                let axErr = _AXUIElementGetWindow(axWindow, &windowID)
-
-                // If we can't get the window ID, assign a synthetic one
-                let finalID: CGWindowID
-                if axErr == .success && windowID != 0 {
-                    finalID = windowID
-                } else {
-                    finalID = CGWindowID(arc4random())
-                }
-
-                let info = WindowInfo(
-                    id: finalID,
-                    title: title,
-                    appName: appName,
-                    appIcon: appIcon,
-                    pid: app.processIdentifier,
-                    isMinimized: isMinimized,
-                    axWindow: axWindow
-                )
-
-                if isMinimized {
-                    minimizedResults.append(info)
-                } else if let z = zOrder[finalID] {
-                    // Insert sorted by Z-order
-                    let insertIndex = results.firstIndex(where: { zOrder[$0.id] ?? Int.max > z }) ?? results.endIndex
-                    results.insert(info, at: insertIndex)
-                } else {
-                    // On-screen but not in CG list (rare), add at end of visible
-                    results.append(info)
-                }
+        // Preserve Z-order: use the first window's order from the input array
+        var pidOrder: [pid_t] = []
+        var seen = Set<pid_t>()
+        for w in windows {
+            if seen.insert(w.pid).inserted {
+                pidOrder.append(w.pid)
             }
         }
 
-        // Minimized windows go at the end
+        return pidOrder.compactMap { pid -> WindowInfo? in
+            guard let appWindows = grouped[pid], let representative = appWindows.first else { return nil }
+            let visibleCount = appWindows.filter { !$0.isMinimized }.count
+            let minimizedCount = appWindows.filter { $0.isMinimized }.count
+            let allMinimized = visibleCount == 0
+
+            return WindowInfo(
+                id: representative.id,
+                title: representative.title,
+                appName: representative.appName,
+                appIcon: representative.appIcon,
+                pid: representative.pid,
+                isMinimized: allMinimized,
+                axWindow: representative.axWindow,
+                visibleCount: visibleCount,
+                minimizedCount: minimizedCount
+            )
+        }
+    }
+
+    // MARK: - Full enumeration (parallel AX)
+
+    static func enumerate() -> [WindowInfo] {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let zOrder = zOrderMap()
+
+        let runningApps = NSWorkspace.shared.runningApplications.filter {
+            $0.activationPolicy == .regular && $0.processIdentifier != ownPID
+        }
+
+        let lock = NSLock()
+        var allResults: [WindowInfo] = []
+        var allMinimized: [WindowInfo] = []
+
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "enumerate", attributes: .concurrent)
+
+        for app in runningApps {
+            group.enter()
+            queue.async {
+                defer { group.leave() }
+
+                let axApp = AXUIElementCreateApplication(app.processIdentifier)
+                AXUIElementSetMessagingTimeout(axApp, 0.5)
+                var windowsRef: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+                      let axWindows = windowsRef as? [AXUIElement] else {
+                    return
+                }
+
+                let name = app.localizedName ?? "Unknown"
+                let icon = appIcon(for: app)
+
+                var visible: [WindowInfo] = []
+                var minimized: [WindowInfo] = []
+
+                for ax in axWindows {
+                    guard let info = readWindowInfo(from: ax, appName: name, appIcon: icon, pid: app.processIdentifier) else { continue }
+                    if info.isMinimized {
+                        minimized.append(info)
+                    } else {
+                        visible.append(info)
+                    }
+                }
+
+                lock.lock()
+                allResults.append(contentsOf: visible)
+                allMinimized.append(contentsOf: minimized)
+                lock.unlock()
+            }
+        }
+
+        group.wait()
+
+        allResults.sort { (zOrder[$0.id] ?? Int.max) < (zOrder[$1.id] ?? Int.max) }
+        allResults.append(contentsOf: allMinimized)
+        return allResults
+    }
+
+    // MARK: - Single-app enumeration
+
+    static func enumerateForApp(pid: pid_t) -> [WindowInfo] {
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.processIdentifier == pid }) else {
+            return []
+        }
+
+        let zOrder = zOrderMap()
+
+        let axApp = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let axWindows = windowsRef as? [AXUIElement] else {
+            return []
+        }
+
+        let name = app.localizedName ?? "Unknown"
+        let icon = appIcon(for: app)
+
+        var results: [WindowInfo] = []
+        var minimizedResults: [WindowInfo] = []
+
+        for ax in axWindows {
+            guard let info = readWindowInfo(from: ax, appName: name, appIcon: icon, pid: pid) else { continue }
+
+            if info.isMinimized {
+                minimizedResults.append(info)
+            } else if let z = zOrder[info.id] {
+                let insertIndex = results.firstIndex(where: { zOrder[$0.id] ?? Int.max > z }) ?? results.endIndex
+                results.insert(info, at: insertIndex)
+            } else {
+                results.append(info)
+            }
+        }
+
         results.append(contentsOf: minimizedResults)
         return results
     }
